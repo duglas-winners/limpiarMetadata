@@ -47,38 +47,53 @@ Pulsa **Seleccionar archivos**. Se abre el explorador de Windows.
 - El filtro muestra por defecto solo formatos compatibles. Si no ves tus archivos, cambia el desplegable a "Todos los archivos".
 - Los nombres aparecen listados en el recuadro central, cada uno precedido de `[  ]` (pendiente).
 
-### Paso 2 — Elegir dónde guardar los resultados
+### Paso 2 — Elegir cómo ver la cola (opcional)
+
+Arriba a la derecha hay un conmutador con dos vistas. Puedes cambiar entre ellas en cualquier momento, incluso mientras se procesa, sin perder nada.
+
+| Vista | Qué muestra | Cuándo conviene |
+|---|---|---|
+| **Lista** | Una línea por archivo | Lotes grandes, cuando solo quieres ver el avance |
+| **Detalle** | Miniatura de cada archivo, tamaño, formato y resultado | Cuando quieres confirmar visualmente qué estás procesando |
+
+En la vista **Detalle** verás una vista previa de cada imagen y, en los vídeos, un fotograma del primer segundo. Las miniaturas se generan en segundo plano: mientras aparecen verás un recuadro con puntos suspensivos, y la aplicación sigue respondiendo con normalidad.
+
+Si un archivo no se puede previsualizar (está dañado, o es un formato que no admite vista previa), su recuadro dirá "sin vista". Eso **no** impide procesarlo.
+
+### Paso 3 — Elegir dónde guardar los resultados
 
 Pulsa **Carpeta destino** y elige una carpeta. La ruta actual siempre se muestra bajo los botones.
 
 Si no eliges nada, se usa `C:\Users\TuUsuario\Archivos_Limpiados`, que se crea sola la primera vez.
 
-> Consejo: usa una carpeta distinta de la de los originales. Así nunca hay duda de cuál es cuál.
+> **Importante:** debe ser una carpeta **distinta** de donde están tus originales. Como las copias limpias conservan el nombre original, guardarlas en la misma carpeta sobrescribiría los archivos de partida. La aplicación lo detecta y no te dejará hacerlo.
 
-### Paso 3 — Procesar
+### Paso 4 — Procesar
 
 Pulsa el botón verde **Procesar cola de archivos**.
 
 - El botón se desactiva y cambia a "Procesando..." mientras trabaja.
 - La barra azul avanza a medida que se completan archivos.
-- Cada archivo terminado aparece en la lista con su resultado.
-- **La ventana sigue respondiendo**: puedes moverla o minimizarla sin problema. No la cierres hasta que termine.
+- Cada archivo terminado muestra su resultado, en cualquiera de las dos vistas.
+- **La ventana sigue respondiendo**: puedes moverla, minimizarla o cambiar de vista sin problema. No la cierres hasta que termine.
 
 Las imágenes tardan menos de un segundo cada una. Los vídeos suelen tardar unos segundos incluso si pesan varios GB, porque no se recodifican, solo se reempaquetan.
 
-### Paso 4 — Revisar el resultado
+### Paso 5 — Revisar el resultado
 
 Al terminar aparece un aviso con el recuento de correctos y con error, y la ruta donde quedaron.
 
-Los archivos limpios se llaman igual que los originales, con el prefijo **`sin_meta_`**:
+**Los archivos limpios conservan exactamente el nombre original:**
 
 ```
-foto_vacaciones.jpg   →   sin_meta_foto_vacaciones.jpg
+foto vacaciones.jpg   →   foto vacaciones.jpg
 ```
 
-Si procesas el mismo archivo dos veces, la segunda copia se guarda como `sin_meta_foto_vacaciones_1.jpg`. **Nunca se sobrescribe un resultado anterior.**
+Están en la carpeta destino, así que no hay confusión posible con los originales, que siguen intactos en su sitio.
 
-### Paso 5 — Comprobarlo tú mismo (opcional)
+Si procesas el mismo archivo dos veces sobre la misma carpeta destino, la segunda copia se guarda como `foto vacaciones_1.jpg`. **Nunca se sobrescribe un resultado anterior.**
+
+### Paso 6 — Comprobarlo tú mismo (opcional)
 
 Haz clic derecho en el archivo limpio → **Propiedades** → pestaña **Detalles**. Los campos de cámara, GPS y autor deben aparecer vacíos. Compáralo con el original: la diferencia se ve de inmediato.
 
@@ -104,6 +119,7 @@ Cualquier otro archivo que añadas a la cola se marcará como "Formato no soport
 | `[!!] notas.txt - Formato no soportado` | No es imagen ni vídeo | Quitarlo de la selección |
 | `[!!] video.mp4 - FFmpeg no está disponible...` | La aplicación no incluye FFmpeg | Descargar la versión oficial desde Releases |
 | `[!!] archivo.jpg - El archivo ya no existe` | Se movió o borró tras seleccionarlo | Volver a seleccionarlo |
+| `[!!] archivo.jpg - La carpeta destino es la del original...` | Destino y origen coinciden | Elegir otra carpeta destino |
 | `[!!] archivo.jpg - Fallo al limpiar` | Archivo dañado o formato interno raro | Abrirlo para confirmar que no está corrupto |
 
 ---
@@ -123,7 +139,16 @@ La versión oficial de Releases lo lleva incluido, así que esto solo pasa si es
 Es esperado: la aplicación descomprime su contenido al arrancar. Son 2 o 3 segundos, iguales en cada apertura.
 
 **No encuentro los archivos limpios**
-Mira la ruta que dice "Destino:" bajo los botones, y busca ahí los archivos que empiezan por `sin_meta_`.
+Mira la ruta que dice "Destino:" bajo los botones. Ahí están, con el mismo nombre que los originales.
+
+**Dice que la carpeta destino no es válida**
+Elegiste como destino la misma carpeta donde están los originales. Como las copias conservan el nombre original, los sobrescribiría. Elige otra carpeta.
+
+**En la vista Detalle algunos recuadros dicen "sin vista"**
+Ese archivo no se pudo previsualizar: puede estar dañado o ser un formato sin vista previa. No afecta al procesamiento; se limpiará igual.
+
+**Las miniaturas tardan en aparecer**
+Se generan en segundo plano, y los vídeos requieren extraer un fotograma, lo que lleva algo más. La aplicación funciona con normalidad mientras tanto.
 
 **El PNG transparente quedó con fondo blanco**
 Ocurre solo si el archivo de salida es JPEG o BMP: esos formatos no admiten transparencia y hay que rellenarla. Los PNG y WebP conservan la transparencia intacta.

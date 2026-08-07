@@ -57,9 +57,11 @@ limpiarMetadata/
 │   ├── limpiador_video.py    # Remux sin recodificar (FFmpeg)
 │   └── proveedor.py          # Resuelve el limpiador según la extensión
 ├── nucleo/
-│   └── procesador.py         # Cola en paralelo con grupo de hilos
+│   ├── procesador.py         # Cola en paralelo con grupo de hilos
+│   └── miniaturas.py         # Vistas previas de imagen y vídeo, con caché
 ├── interfaz/
-│   └── ventana_principal.py  # Ventana única (CustomTkinter)
+│   ├── ventana_principal.py  # Ventana única (CustomTkinter)
+│   └── vista_cola.py         # Visor de la cola: vista lista y vista detalle
 ├── empaquetado/              # Todo lo relativo a generar los ejecutables
 │   ├── obtener_ffmpeg.py     # Descarga FFmpeg para incrustarlo
 │   ├── limpiador.spec        # Especificación de PyInstaller (Windows y Mac)

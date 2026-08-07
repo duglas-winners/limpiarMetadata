@@ -36,7 +36,9 @@ Usuario pulsa "Procesar"
                   → limpiador.limpiar(entrada, salida)
                   → devuelve ResultadoArchivo
               → notificar_progreso(resultado, actual, total)
-                  → self.after(0, ...)  devuelve el repintado al hilo principal
+                  → cola_eventos.put(...)   el hilo NO toca Tkinter
+  → _consumir_eventos()  cada 80 ms         [hilo principal]
+      → vista_cola.actualizar_resultado(), barra, etiqueta
   → _finalizar_procesamiento(resultados)        [hilo principal]
 ```
 
@@ -153,7 +155,12 @@ Administra la cola de procesamiento en paralelo mediante un grupo de hilos. Se u
 | `__init__` | `(max_hilos: int = 4)` | Guarda el tamaño del grupo de hilos, con mínimo de 1 para evitar un `ThreadPoolExecutor` inválido. La interfaz le pasa `os.cpu_count()`. |
 | `procesar_archivos` | `(lista_archivos, carpeta_destino, notificar_progreso) -> List[ResultadoArchivo]` | Método principal. Crea la carpeta destino si no existe, envía cada archivo al grupo de hilos con `submit`, y consume los resultados con `as_completed` a medida que terminan. Envuelve `futuro.result()` en un `try/except` que convierte cualquier excepción imprevista en un `ResultadoArchivo` fallido: **la cola nunca se rompe a la mitad**. Llama a `notificar_progreso(resultado, completados, total)` una vez por archivo terminado, desde el hilo trabajador. Devuelve la lista completa de resultados. |
 | `_tarea_individual` | `(ruta, carpeta_destino) -> ResultadoArchivo` *(estático)* | Lo que ejecuta cada hilo para un archivo. Encadena cuatro comprobaciones y devuelve un resultado descriptivo en cada punto de salida: ¿el archivo sigue existiendo? → ¿hay limpiador para su extensión? → ¿están sus dependencias? → ejecutar `limpiar`. |
-| `_ruta_salida_libre` | `(ruta, carpeta_destino) -> Path` *(estático)* | Construye `sin_meta_<nombre>` en la carpeta destino. Si ya existe, añade un sufijo numérico (`sin_meta_foto_1.jpg`) hasta encontrar un nombre libre, de modo que procesar dos veces el mismo lote no destruye la corrida anterior. |
+| `_ruta_salida_libre` | `(ruta, carpeta_destino) -> Path` *(estático)* | **La copia limpia conserva el nombre original.** Como eso hace que el nombre de salida pueda coincidir con el de entrada, aplica dos salvaguardas: si la ruta calculada resuelve al mismo archivo de origen, lanza `DestinoInvalido` en vez de destruirlo; si ya existe *otro* archivo con ese nombre (corrida anterior), añade sufijo numérico (`foto_1.jpg`). |
+
+#### Excepción `DestinoInvalido`
+Señala que la ruta de salida calculada pondría en riesgo el archivo original. La captura `_tarea_individual` y la convierte en un `ResultadoArchivo` fallido con mensaje legible, de modo que el resto del lote continúa.
+
+> **Por qué existe:** la versión inicial prefijaba las copias con `sin_meta_`, lo que hacía imposible la colisión. Al pasar a conservar el nombre original a petición del usuario, esa garantía desapareció y hubo que reponerla explícitamente. La interfaz comprueba lo mismo antes de arrancar el lote; esta es la segunda barrera, para que ninguna ruta de ejecución pueda saltársela.
 
 **Sobre `notificar_progreso`:** es un `Callable[[ResultadoArchivo, int, int], None]`. Al recibirlo como parámetro, el núcleo no depende de la interfaz: en una versión de línea de comandos bastaría con pasarle un `print`.
 
@@ -161,7 +168,73 @@ Administra la cola de procesamiento en paralelo mediante un grupo de hilos. Se u
 
 ---
 
+### 3.2 `nucleo/miniaturas.py`
+
+Genera las vistas previas de la vista de detalle. Vive en `nucleo/` y no en `interfaz/` porque no depende de Tkinter: produce objetos `PIL.Image`, y quien los pinta decide cómo.
+
+**Estado del módulo:** una caché `dict` protegida por un `Lock`, indexada por `(ruta, lado)`. La misma miniatura no se genera dos veces aunque se pida desde varios hilos a la vez.
+
+| Función | Firma | Qué hace |
+|---|---|---|
+| `obtener` | `(ruta: Path, lado: int = 64) -> Image \| None` | Punto de entrada. Consulta la caché, genera si falta, y guarda. Devuelve `None` si el archivo no admite vista previa. Seguro entre hilos. |
+| `_generar` | `(ruta, lado) -> Image \| None` | Despacha a imagen o vídeo según la extensión. Captura cualquier excepción y devuelve `None`: **una vista previa fallida nunca debe impedir procesar el archivo**. |
+| `_encajar` | `(imagen, lado) -> Image` | Reduce con `thumbnail` (LANCZOS) y centra el resultado sobre un lienzo cuadrado transparente, para que todas las filas queden alineadas sea cual sea la proporción del original. |
+| `_desde_imagen` | `(ruta, lado) -> Image` | Abre con Pillow y encaja. |
+| `_desde_video` | `(ruta, lado) -> Image \| None` | Extrae un fotograma con FFmpeg volcándolo a PNG por `stdout`, sin archivo temporal. Busca en el **segundo 1** para evitar los fundidos en negro que abren muchos vídeos, y reintenta desde el inicio si el clip es más corto. |
+| `limpiar_cache` | `() -> None` | Libera las miniaturas guardadas. Se llama al vaciar la cola. |
+
+---
+
 ## 4. Módulo `interfaz/`
+
+### 4.0 `interfaz/vista_cola.py`
+
+Componente que encapsula el visor de la cola con sus dos presentaciones. Existe como módulo aparte porque la lógica de dos vistas, miniaturas asíncronas y estado por fila desbordaba la ventana principal.
+
+#### Clase `FilaArchivo`
+Estado de un archivo en la cola, **independiente de cómo se dibuje**. Es lo que permite alternar de vista sin perder resultados: los widgets se destruyen y recrean, este objeto no.
+
+| Miembro | Tipo | Significado |
+|---|---|---|
+| `ruta` | `Path` | Archivo de origen |
+| `estado` | `str` | `"pendiente"`, `"ok"` o `"error"` |
+| `mensaje` | `str` | Texto legible del desenlace |
+| `ruta_salida` | `Path \| None` | Dónde quedó la copia limpia |
+| `aplicar(resultado)` | método | Vuelca un `ResultadoArchivo` sobre la fila |
+| `tamano_legible` | propiedad | Tamaño formateado (`2.4 MB`), o `?` si el archivo ya no es accesible |
+
+#### Clase `VistaCola(ctk.CTkFrame)`
+
+**Métodos públicos** (todos desde el hilo principal):
+
+| Método | Qué hace |
+|---|---|
+| `establecer_modo(modo)` | Alterna entre `"lista"` y `"detalle"`, conservando el estado de la cola |
+| `cargar(rutas)` | Sustituye la cola por archivos pendientes |
+| `vaciar(aviso=None)` | Descarta la cola; con `aviso`, lo muestra en lugar de las filas |
+| `reiniciar_estados()` | Devuelve todas las filas a pendiente antes de una corrida nueva |
+| `actualizar_resultado(resultado)` | Aplica el desenlace de un archivo y refresca |
+
+**Métodos internos relevantes:**
+
+| Método | Qué hace |
+|---|---|
+| `_dibujar_lista` | Rellena la caja de texto de solo lectura |
+| `_dibujar_detalle` | Destruye las tarjetas anteriores y crea una por fila |
+| `_crear_fila_detalle` | Construye una tarjeta: hueco de miniatura, nombre, metadatos y estado coloreado |
+| `_pedir_miniatura` | Lanza un hilo que genera la miniatura y **deposita el resultado en una cola** |
+| `_consumir_cola` | Vacía esa cola en el hilo principal y se reprograma cada 100 ms |
+| `_colocar_miniatura` | Coloca la imagen, o el texto "sin vista" si no hubo |
+
+**Tres decisiones que evitan fallos concretos:**
+
+1. **`_widgets_filas` en vez de `winfo_children()`.** Al redibujar el detalle hay que destruir las tarjetas anteriores, pero `winfo_children()` sobre un `CTkScrollableFrame` devuelve también el lienzo y la barra de desplazamiento internos de CustomTkinter. Destruirlos rompe el contenedor. El componente lleva su propia lista de lo que él creó y solo destruye eso.
+
+2. **`_imagenes_vivas`.** Tkinter no retiene referencias a las imágenes que muestra; sin una lista que las mantenga vivas, el recolector de basura las libera y los recuadros aparecen en blanco.
+
+3. **`_generacion`.** Un contador que sube en cada `cargar` o `vaciar`. Una miniatura que termina de generarse cuando su archivo ya no está en la cola se descarta, en lugar de pintarse sobre la fila equivocada.
+
+---
 
 ### 4.1 `interfaz/ventana_principal.py`
 
@@ -170,7 +243,11 @@ Administra la cola de procesamiento en paralelo mediante un grupo de hilos. Se u
 #### Clase `VentanaPrincipal(ctk.CTk)`
 Ventana única de la aplicación (hereda de la ventana raíz de CustomTkinter).
 
-**Regla de hilos, la más importante del módulo:** el procesamiento corre en un hilo secundario para que la ventana no se congele, pero **Tkinter solo admite llamadas desde el hilo principal**. Tocar un widget desde un hilo trabajador produce cuelgues intermitentes muy difíciles de diagnosticar. Por eso todo repintado se encola con `self.after(0, funcion, *args)`, que ejecuta la función en el hilo principal en el siguiente ciclo del bucle de eventos.
+**Regla de hilos, la más importante del módulo:** el procesamiento corre en un hilo secundario para que la ventana no se congele, pero **Tkinter solo admite llamadas desde el hilo principal**, y eso **incluye `after()`**: registrar una llamada diferida crea un comando en el intérprete Tcl, operación que no es segura entre hilos.
+
+Por eso el hilo trabajador no toca Tkinter en absoluto. Deposita cada novedad en `self.cola_eventos` (una `queue.Queue`), y el hilo principal la vacía cada 80 ms con `_consumir_eventos`. Los eventos son tuplas `(tipo, carga)` con tres tipos: `"avance"`, `"fin"` y `"error"`.
+
+> **Por qué no `after()` desde el hilo:** es un patrón extendido y funciona *casi* siempre, lo que lo hace especialmente traicionero. Al probar la vista de detalle apareció como `RuntimeError: main thread is not in main loop`. El patrón de cola elimina la clase entera de fallo en lugar de ocultarla.
 
 **Estado de la instancia:**
 
@@ -193,17 +270,19 @@ Ventana única de la aplicación (hereda de la ventana raíz de CustomTkinter).
 
 | Método | Disparador | Qué hace |
 |---|---|---|
+| `_cambiar_vista` | Conmutador Lista/Detalle | Traduce la etiqueta del botón al modo interno y lo delega a `VistaCola`. |
 | `_avisar_si_falta_ffmpeg` | Arranque | Comprueba FFmpeg y, si falta, lo avisa **dentro de la ventana** (etiqueta de estado + visor), no con un diálogo modal: las imágenes siguen siendo procesables y frenar el arranque sería desproporcionado. |
-| `_seleccionar_archivos` | Botón "Seleccionar archivos" | Abre `askopenfilenames` con el filtro generado por `ProveedorLimpiadores.patron_dialogo()`, guarda las rutas y pinta la cola con estado pendiente `[  ]`. Si el usuario cancela, no toca nada. |
+| `_seleccionar_archivos` | Botón "Seleccionar archivos" | Abre `askopenfilenames` con el filtro generado por `ProveedorLimpiadores.patron_dialogo()`, guarda las rutas y carga la cola. Si el usuario cancela, no toca nada. |
 | `_seleccionar_carpeta_destino` | Botón "Carpeta destino" | Abre `askdirectory` y actualiza la ruta y su etiqueta. |
 | `_vaciar_cola` | Botón "Vaciar cola" | Descarta la selección y devuelve la pantalla a su estado inicial. |
-| `_iniciar_procesamiento` | Botón verde | Valida que haya archivos (si no, aviso y retorno), deshabilita el botón para impedir un doble lanzamiento, limpia el visor y arranca el hilo trabajador como `daemon=True` para que no impida cerrar la app. |
+| `_iniciar_procesamiento` | Botón verde | Valida que haya archivos y que **la carpeta destino no sea la de ningún original** (si lo es, muestra un error y no arranca), deshabilita el botón para impedir un doble lanzamiento, reinicia los estados y arranca el hilo trabajador como `daemon=True`. |
+| `_consumir_eventos` | Temporizador cada 80 ms | Aplica en el hilo principal las novedades depositadas por el trabajador. Se reprograma mientras la ventana exista. |
 
 **Métodos — hilo secundario y cierre:**
 
 | Método | Contexto | Qué hace |
 |---|---|---|
-| `_procesar_en_segundo_plano` | Hilo trabajador | Cuerpo del hilo. Define la función interna `actualizar_progreso`, que formatea cada renglón (`[OK]` / `[!!]` + nombre + mensaje) y delega los tres repintados —renglón, barra, etiqueta— al hilo principal vía `after`. Llama a `procesar_archivos` y, al terminar, delega el cierre. Un `try/except` global desvía cualquier fallo del lote a `_finalizar_con_error`. |
+| `_procesar_en_segundo_plano` | Hilo trabajador | Cuerpo del hilo. No toca Tkinter: su `actualizar_progreso` solo hace `cola_eventos.put(("avance", ...))`. Llama a `procesar_archivos` y encola `"fin"` con los resultados; un `try/except` global encola `"error"`. |
 | `_finalizar_procesamiento(resultados)` | Hilo principal | Cuenta correctos y fallidos, reactiva el botón, escribe el resumen en la etiqueta y muestra el diálogo final con la ruta de destino. |
 | `_finalizar_con_error(detalle)` | Hilo principal | Reactiva el botón y muestra un diálogo de error. Garantiza que la interfaz nunca se quede bloqueada con el botón deshabilitado. |
 
@@ -270,6 +349,17 @@ Probado en Windows 11 con Python 3.14.6, Pillow 12.3.0, CustomTkinter 6.0.0 y FF
 
 **Cola:**
 - Archivo `.txt` mezclado en el lote → reportado como "Formato no soportado" sin interrumpir el resto.
+
+**Nombre de salida (v1.1):**
+- Los tres archivos de prueba salen con nombre idéntico al original, espacios incluidos.
+- Segunda corrida sobre la misma carpeta destino → `captura_1.png`, `clip_1.mp4`, `foto vacaciones_1.jpg`; ninguna copia anterior se pierde.
+- Destino igual a la carpeta de los originales → los tres archivos se rechazan con mensaje explícito, los originales quedan intactos y su EXIF sigue presente (comprobado leyéndolo después).
+
+**Interfaz (v1.1):**
+- Conmutar Lista → Detalle → Lista → Detalle conserva las 3 filas del modelo y el contenedor desplazable sigue sano en cada paso.
+- Las 3 miniaturas (JPEG, PNG y fotograma de MP4) se generan y colocan; la caché devuelve el mismo objeto en la segunda petición.
+- Procesamiento completo lanzado desde la interfaz: 3 correctos, barra al 100 %, nombres idénticos a los originales.
+- Intentar procesar con destino = origen deja el botón activo y muestra el diálogo de error.
 
 **Empaquetado:**
 - `LimpiadorMetadatos.exe` de 55,1 MB generado con PyInstaller 6.21.0.

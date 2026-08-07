@@ -22,7 +22,7 @@ Es la aplicación entera. Tamaño 780×600, mínimo 640×500.
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │ [Seleccionar archivos] [Carpeta destino] [Vaciar cola]     │  │  ← Zona 1
+│  │ [Seleccionar] [Destino] [Vaciar]        [ Lista │ Detalle ]│  │  ← Zona 1
 │  └────────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  Destino: C:\Users\Duglas\Archivos_Limpiados                     │  ← Zona 2
@@ -30,7 +30,7 @@ Es la aplicación entera. Tamaño 780×600, mínimo 640×500.
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │ [  ] foto_playa.jpg                                        │  │
 │  │ [  ] captura_pantalla.png                                  │  │  ← Zona 3
-│  │ [  ] clip_boda.mp4                                         │  │
+│  │ [  ] clip_boda.mp4                                         │  │    (vista Lista)
 │  │                                                            │  │
 │  │                                                            │  │
 │  └────────────────────────────────────────────────────────────┘  │
@@ -45,6 +45,25 @@ Es la aplicación entera. Tamaño 780×600, mínimo 640×500.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+La Zona 3 en vista **Detalle**:
+
+```
+  ┌────────────────────────────────────────────────────────────┐
+  │ ┌──────┐  foto_playa.jpg                                   │
+  │ │ 🖼️   │  2.4 MB  ·  JPG  ·  guardado como foto_playa.jpg  │
+  │ └──────┘  [OK] Limpiado                                    │
+  ├────────────────────────────────────────────────────────────┤
+  │ ┌──────┐  clip_boda.mp4                                    │
+  │ │ 🎞️   │  184.2 MB  ·  MP4                                 │
+  │ └──────┘  [  ] En cola                                     │
+  ├────────────────────────────────────────────────────────────┤
+  │ ┌──────┐  documento.tif                                    │
+  │ │ sin  │  1.1 MB  ·  TIF                                   │
+  │ │ vista│  [!!] Formato no soportado                        │
+  │ └──────┘                                                   │
+  └────────────────────────────────────────────────────────────┘
+```
+
 ### Zona 1 — Barra de acciones
 
 Un marco horizontal con tres botones alineados a la izquierda, en el orden natural de uso.
@@ -55,6 +74,8 @@ Un marco horizontal con tres botones alineados a la izquierda, en el orden natur
 | **Carpeta destino** | Azul (primario) | Abre el selector de carpeta | Siempre activo salvo durante el procesamiento |
 | **Vaciar cola** | Gris (secundario) | Descarta la selección | Deliberadamente gris: es destructivo y no debe competir visualmente con las acciones principales |
 
+A la **derecha** de la misma barra, separado del grupo anterior, va el conmutador de vista (`CTkSegmentedButton` con "Lista" y "Detalle"). Está alineado a la derecha a propósito: no ejecuta trabajo ni modifica la cola, solo cambia cómo se presenta lo que ya hay en pantalla. Agruparlo con los botones de acción sugeriría que hace algo al archivo.
+
 ### Zona 2 — Etiqueta de destino
 
 Una línea de texto alineada a la izquierda, siempre visible: `Destino: <ruta completa>`.
@@ -63,7 +84,11 @@ Debe mostrarse **siempre**, incluso con la ruta por defecto. Es la respuesta a l
 
 ### Zona 3 — Visor de la cola
 
-Caja de texto de solo lectura que ocupa todo el espacio sobrante al redimensionar la ventana. Un renglón por archivo, con prefijo de estado de ancho fijo para que los nombres queden alineados:
+Ocupa todo el espacio sobrante al redimensionar la ventana. Tiene **dos presentaciones intercambiables de los mismos datos**; solo cambia la densidad de información.
+
+#### Vista Lista (por defecto)
+
+Caja de texto de solo lectura. Un renglón por archivo, con prefijo de estado de ancho fijo para que los nombres queden alineados:
 
 ```
 [  ] pendiente
@@ -71,10 +96,32 @@ Caja de texto de solo lectura que ocupa todo el espacio sobrante al redimensiona
 [!!] error, seguido del motivo
 ```
 
-Reglas:
 - El usuario **no puede escribir** en ella (`state="disabled"`); solo el programa la actualiza.
-- Durante el procesamiento hace **auto-scroll** al último renglón añadido.
-- Al iniciar una corrida se vacía y se rellena de nuevo con los resultados a medida que llegan.
+- Hace **auto-scroll** al último renglón durante el procesamiento.
+
+#### Vista Detalle
+
+Marco desplazable con una tarjeta por archivo. Cada tarjeta tiene, de izquierda a derecha:
+
+| Elemento | Contenido |
+|---|---|
+| Miniatura | 56×56 px. Imágenes: reducidas con Pillow. Vídeos: un fotograma del segundo 1, extraído con FFmpeg |
+| Nombre | En negrita, primera línea |
+| Metadatos | Tamaño legible · formato · nombre con el que se guardó (solo si ya se procesó) |
+| Estado | Símbolo y mensaje, **coloreado**: gris pendiente, verde correcto, rojo error |
+
+Estados del hueco de miniatura, en orden:
+
+1. `...` sobre fondo gris — se está generando.
+2. La miniatura — lista.
+3. `sin vista` — no se pudo previsualizar (archivo dañado, formato sin vista previa, FFmpeg ausente). **Nunca impide procesar el archivo.**
+
+#### Reglas comunes a ambas vistas
+
+- **El estado vive en el modelo, no en los widgets.** Alternar de vista redibuja desde `FilaArchivo`, así que no se pierde ningún resultado ni siquiera a mitad de una corrida.
+- **Las miniaturas se generan fuera del hilo de la interfaz** y se cachean. La ventana nunca se congela esperándolas.
+- **Al vaciar la cola se descarta la caché** de miniaturas, para no retener en memoria imágenes de archivos que ya no interesan.
+- Cada carga de cola incrementa un contador de generación: una miniatura que termina de generarse tarde, cuando su archivo ya no está en la cola, **se descarta en vez de pintarse** sobre la fila equivocada.
 
 ### Zona 4 — Indicadores de estado
 
@@ -155,8 +202,11 @@ Ninguna es una ventana propia de la aplicación: son diálogos del sistema o avi
 | 2 | **Selector de archivos** | Botón "Seleccionar archivos" | Diálogo nativo de Windows, selección múltiple activada. Dos filtros: "Imágenes y videos" (por defecto) y "Todos los archivos" |
 | 3 | **Selector de carpeta** | Botón "Carpeta destino" | Diálogo nativo de carpeta, título *"Seleccionar carpeta para guardar resultados"* |
 | 4 | **Aviso: cola vacía** | Botón verde sin archivos | Advertencia. Título "Atencion", texto *"Por favor selecciona al menos un archivo."* |
-| 5 | **Resumen final** | Al terminar la corrida | Información. Recuento de correctos y con error, más la ruta de destino completa |
-| 6 | **Error global** | Fallo del lote entero | Error. Título "Error" y el detalle técnico |
+| 5 | **Error: destino no válido** | Botón verde con destino = carpeta de los originales | Error. Explica que las copias conservan el nombre original y sobrescribirían los archivos de partida |
+| 6 | **Resumen final** | Al terminar la corrida | Información. Recuento de correctos y con error, más la ruta de destino completa |
+| 7 | **Error global** | Fallo del lote entero | Error. Título "Error" y el detalle técnico |
+
+El diálogo 5 es una salvaguarda añadida al pasar a conservar el nombre original: sin prefijo que distinga la copia, escribir en la carpeta de origen destruiría el archivo de partida. Se comprueba **antes** de empezar el lote, y el núcleo lo verifica otra vez por archivo, de modo que ninguna ruta de ejecución puede saltárselo.
 
 **El aviso de FFmpeg faltante no es un diálogo.** Se muestra dentro de la ventana, en la etiqueta de estado y en el visor. Razón: las imágenes sí se pueden procesar sin FFmpeg, así que frenar el arranque con un modal que hay que cerrar cada vez sería desproporcionado para un problema que solo afecta a la mitad de los casos de uso.
 
@@ -172,6 +222,8 @@ Aplican a cualquier rediseño o ampliación de la interfaz.
 4. **El color codifica intención, no decoración.** Verde = ejecutar, azul = navegar/elegir, gris = descartar.
 5. **El texto del botón principal indica el estado.** `Procesar cola de archivos` frente a `Procesando...`: se lee sin mirar la barra de progreso.
 6. **Tema claro/oscuro automático.** `appearance_mode` en `"System"` sigue la configuración de Windows; no se ofrece un selector manual porque no aporta nada aquí.
+7. **Ningún hilo secundario toca Tkinter, ni siquiera con `after()`.** Registrar una llamada diferida crea un comando en el intérprete Tcl, lo cual no es seguro entre hilos. Los trabajadores depositan sus novedades en una `queue.Queue` y el hilo principal la vacía cada 80–100 ms. Es la regla que hace que la ventana nunca se cuelgue de forma intermitente.
+8. **Una vista previa que falla nunca bloquea el trabajo.** La miniatura es una comodidad; su ausencia se muestra y se sigue adelante.
 
 ---
 

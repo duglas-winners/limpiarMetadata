@@ -6,6 +6,10 @@ from typing import Callable, List
 from limpiadores.proveedor import ProveedorLimpiadores
 
 
+class DestinoInvalido(Exception):
+    """La ruta de salida calculada pondria en riesgo el archivo original."""
+
+
 @dataclass(frozen=True)
 class ResultadoArchivo:
     """Resultado del procesamiento de un unico archivo de la cola."""
@@ -77,7 +81,11 @@ class ProcesadorEnLote:
         if not disponible:
             return ResultadoArchivo(ruta, None, False, motivo)
 
-        ruta_salida = ProcesadorEnLote._ruta_salida_libre(ruta, carpeta_destino)
+        try:
+            ruta_salida = ProcesadorEnLote._ruta_salida_libre(ruta, carpeta_destino)
+        except DestinoInvalido as error:
+            return ResultadoArchivo(ruta, None, False, str(error))
+
         exito = limpiador.limpiar(ruta, ruta_salida)
         mensaje = "Limpiado" if exito else "Fallo al limpiar (ver consola)"
         return ResultadoArchivo(ruta, ruta_salida if exito else None, exito, mensaje)
@@ -85,12 +93,27 @@ class ProcesadorEnLote:
     @staticmethod
     def _ruta_salida_libre(ruta: Path, carpeta_destino: Path) -> Path:
         """
-        Construye `sin_meta_<nombre>` en la carpeta destino y, si ya existe,
-        añade un sufijo numerico para no sobrescribir resultados anteriores.
+        La copia limpia conserva el nombre original del archivo.
+
+        Dos salvaguardas, porque sin prefijo el nombre de salida puede coincidir
+        con el de entrada:
+
+        1. Si la ruta de destino es exactamente el archivo de origen, se rechaza.
+           Escribir ahi destruiria el original, y toda la aplicacion se apoya en
+           la promesa de no tocarlo.
+        2. Si ya existe otro archivo con ese nombre en el destino (por ejemplo,
+           de una corrida anterior), se añade un sufijo numerico en vez de
+           sobrescribirlo.
         """
-        candidata = carpeta_destino / f"sin_meta_{ruta.name}"
+        candidata = carpeta_destino / ruta.name
+
+        if candidata.resolve() == ruta.resolve():
+            raise DestinoInvalido(
+                "La carpeta destino es la del original; elige otra para no sobrescribirlo"
+            )
+
         contador = 1
         while candidata.exists():
-            candidata = carpeta_destino / f"sin_meta_{ruta.stem}_{contador}{ruta.suffix}"
+            candidata = carpeta_destino / f"{ruta.stem}_{contador}{ruta.suffix}"
             contador += 1
         return candidata
