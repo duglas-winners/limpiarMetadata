@@ -39,15 +39,31 @@ El primer arranque tarda 2 o 3 segundos mientras la aplicación se prepara.
 
 ## 3. Cómo usarla — paso a paso
 
-### Paso 1 — Seleccionar los archivos
+### Paso 1 — Agregar los archivos
 
-Pulsa **Seleccionar archivos**. Se abre el explorador de Windows.
+Pulsa **Agregar archivos**. Se abre el explorador de Windows.
 
 - Puedes elegir varios a la vez: mantén `Ctrl` pulsado y haz clic en cada uno, o `Shift` para un rango completo.
 - El filtro muestra por defecto solo formatos compatibles. Si no ves tus archivos, cambia el desplegable a "Todos los archivos".
-- Los nombres aparecen listados en el recuadro central, cada uno precedido de `[  ]` (pendiente).
+- **Puedes agregar en varias tandas.** Cada vez que pulses el botón, los archivos nuevos se suman a los que ya estaban; no se pierde la selección anterior. Si eliges uno que ya está en la cola, simplemente se ignora.
 
-### Paso 2 — Elegir cómo ver la cola (opcional)
+### Paso 2 — Quitar lo que se haya colado
+
+Si agregaste algo por error, no hace falta empezar de cero:
+
+1. **Marca la casilla** a la izquierda de cada archivo que quieras sacar. La fila se resalta en azul.
+2. Pulsa **Quitar de la cola**, que muestra entre paréntesis cuántos vas a quitar.
+
+Atajos útiles:
+
+- **Marcar todos** (arriba a la izquierda) marca o desmarca la cola entera de golpe. Combínalo con quitar unos pocos para invertir la selección rápidamente.
+- **Vaciar todo** descarta la cola completa sin necesidad de marcar nada.
+
+> Quitar un archivo de la cola **no lo borra de tu disco**. Solo lo saca de la lista de trabajo.
+
+Mientras se está procesando, la cola queda bloqueada: no se puede agregar ni quitar, para que la lista siempre describa el trabajo que realmente se está ejecutando.
+
+### Paso 3 — Elegir cómo ver la cola (opcional)
 
 Arriba a la derecha hay un conmutador con dos vistas. Puedes cambiar entre ellas en cualquier momento, incluso mientras se procesa, sin perder nada.
 
@@ -56,11 +72,11 @@ Arriba a la derecha hay un conmutador con dos vistas. Puedes cambiar entre ellas
 | **Lista** | Una línea por archivo | Lotes grandes, cuando solo quieres ver el avance |
 | **Detalle** | Miniatura de cada archivo, tamaño, formato y resultado | Cuando quieres confirmar visualmente qué estás procesando |
 
-En la vista **Detalle** verás una vista previa de cada imagen y, en los vídeos, un fotograma del primer segundo. Las miniaturas se generan en segundo plano: mientras aparecen verás un recuadro con puntos suspensivos, y la aplicación sigue respondiendo con normalidad.
+En la vista **Detalle** verás una vista previa de cada imagen y, en los vídeos, un fotograma del primer segundo. Las miniaturas se generan en segundo plano: aparecen solas en un par de segundos, y la aplicación sigue respondiendo con normalidad mientras tanto.
 
 Si un archivo no se puede previsualizar (está dañado, o es un formato que no admite vista previa), su recuadro dirá "sin vista". Eso **no** impide procesarlo.
 
-### Paso 3 — Elegir dónde guardar los resultados
+### Paso 4 — Elegir dónde guardar los resultados
 
 Pulsa **Carpeta destino** y elige una carpeta. La ruta actual siempre se muestra bajo los botones.
 
@@ -68,9 +84,9 @@ Si no eliges nada, se usa `C:\Users\TuUsuario\Archivos_Limpiados`, que se crea s
 
 > **Importante:** debe ser una carpeta **distinta** de donde están tus originales. Como las copias limpias conservan el nombre original, guardarlas en la misma carpeta sobrescribiría los archivos de partida. La aplicación lo detecta y no te dejará hacerlo.
 
-### Paso 4 — Procesar
+### Paso 5 — Procesar
 
-Pulsa el botón verde **Procesar cola de archivos**.
+Pulsa el botón verde **Limpiar metadatos**.
 
 - El botón se desactiva y cambia a "Procesando..." mientras trabaja.
 - La barra azul avanza a medida que se completan archivos.
@@ -79,9 +95,9 @@ Pulsa el botón verde **Procesar cola de archivos**.
 
 Las imágenes tardan menos de un segundo cada una. Los vídeos suelen tardar unos segundos incluso si pesan varios GB, porque no se recodifican, solo se reempaquetan.
 
-### Paso 5 — Revisar el resultado
+### Paso 6 — Revisar el resultado
 
-Al terminar aparece un aviso con el recuento de correctos y con error, y la ruta donde quedaron.
+Al terminar aparece un aviso con el recuento de limpiados, omitidos y con error, más la ruta donde quedaron.
 
 **Los archivos limpios conservan exactamente el nombre original:**
 
@@ -93,7 +109,7 @@ Están en la carpeta destino, así que no hay confusión posible con los origina
 
 Si procesas el mismo archivo dos veces sobre la misma carpeta destino, la segunda copia se guarda como `foto vacaciones_1.jpg`. **Nunca se sobrescribe un resultado anterior.**
 
-### Paso 6 — Comprobarlo tú mismo (opcional)
+### Paso 7 — Comprobarlo tú mismo (opcional)
 
 Haz clic derecho en el archivo limpio → **Propiedades** → pestaña **Detalles**. Los campos de cámara, GPS y autor deben aparecer vacíos. Compáralo con el original: la diferencia se ve de inmediato.
 
@@ -106,21 +122,37 @@ Haz clic derecho en el archivo limpio → **Propiedades** → pestaña **Detalle
 | **Imágenes** | `.jpg` `.jpeg` `.png` `.webp` `.bmp` `.tif` `.tiff` |
 | **Vídeos** | `.mp4` `.mkv` `.mov` `.avi` `.flv` `.webm` `.m4v` |
 
-Cualquier otro archivo que añadas a la cola se marcará como "Formato no soportado" y se omitirá, sin afectar al resto del lote.
+Cualquier otro archivo que agregues a la cola se marcará como **Omitido**, sin afectar al resto del lote.
 
 ---
 
-## 5. Cómo leer la lista de resultados
+## 5. Cómo leer los estados
 
-| Marca | Significado | Qué hacer |
+Cada archivo muestra a su derecha una etiqueta de color con su estado. El color se lee de un vistazo y el símbolo funciona aunque no distingas bien los colores.
+
+| Etiqueta | Color | Significado | Qué hacer |
+|---|---|---|---|
+| **• En cola** | Gris | Aún sin procesar | Nada, esperar |
+| **✓ Limpiado** | Verde | Copia limpia creada correctamente | Nada, listo |
+| **! Omitido** | Ámbar | No había nada que hacer con él | Ver abajo |
+| **✕ Error** | Rojo | Se intentó y falló | Ver abajo |
+
+**Omitido** no es un fallo tuyo ni de la aplicación: significa que ese archivo no le corresponde a esta herramienta. Bajo el nombre aparece el motivo:
+
+| Motivo | Qué pasó |
+|---|---|
+| *No es una imagen ni un vídeo* | Es otro tipo de archivo. Quítalo de la cola si no lo querías |
+| *FFmpeg no está disponible...* | Esa compilación no incluye FFmpeg. Descarga la versión oficial desde Releases |
+
+**Error** sí indica un problema con ese archivo concreto:
+
+| Motivo | Qué pasó | Qué hacer |
 |---|---|---|
-| `[  ] archivo.jpg` | En cola, aún sin procesar | Nada, esperar |
-| `[OK] archivo.jpg - Limpiado` | Copia limpia creada correctamente | Nada, listo |
-| `[!!] notas.txt - Formato no soportado` | No es imagen ni vídeo | Quitarlo de la selección |
-| `[!!] video.mp4 - FFmpeg no está disponible...` | La aplicación no incluye FFmpeg | Descargar la versión oficial desde Releases |
-| `[!!] archivo.jpg - El archivo ya no existe` | Se movió o borró tras seleccionarlo | Volver a seleccionarlo |
-| `[!!] archivo.jpg - La carpeta destino es la del original...` | Destino y origen coinciden | Elegir otra carpeta destino |
-| `[!!] archivo.jpg - Fallo al limpiar` | Archivo dañado o formato interno raro | Abrirlo para confirmar que no está corrupto |
+| *El archivo ya no existe* | Se movió o borró tras agregarlo | Volver a agregarlo |
+| *La carpeta destino es la del original...* | Destino y origen coinciden | Elegir otra carpeta destino |
+| *No se pudo procesar* | Archivo dañado o formato interno raro | Abrirlo para confirmar que no está corrupto |
+
+En cualquier caso, **un archivo con problema nunca detiene el resto del lote**: los demás se procesan igual.
 
 ---
 

@@ -12,12 +12,24 @@ class DestinoInvalido(Exception):
 
 @dataclass(frozen=True)
 class ResultadoArchivo:
-    """Resultado del procesamiento de un unico archivo de la cola."""
+    """
+    Resultado del procesamiento de un unico archivo de la cola.
+
+    `codigo` distingue tres desenlaces que la interfaz presenta de forma
+    distinta, porque para el usuario no significan lo mismo:
+
+      "limpiado"  el archivo se proceso correctamente
+      "omitido"   no habia nada que hacer con el (formato no soportado)
+      "error"     se intento y fallo
+
+    `exito` se conserva como atajo para "hay un archivo de salida".
+    """
 
     ruta_origen: Path
     ruta_salida: Path | None
     exito: bool
     mensaje: str
+    codigo: str = "error"
 
 
 class ProcesadorEnLote:
@@ -59,7 +71,9 @@ class ProcesadorEnLote:
                 try:
                     resultado = futuro.result()
                 except Exception as error:  # red de seguridad: la cola nunca se rompe
-                    resultado = ResultadoArchivo(ruta, None, False, f"Error inesperado: {error}")
+                    resultado = ResultadoArchivo(
+                        ruta, None, False, f"Error inesperado: {error}", "error"
+                    )
 
                 resultados.append(resultado)
                 completados += 1
@@ -71,24 +85,26 @@ class ProcesadorEnLote:
     def _tarea_individual(ruta: Path, carpeta_destino: Path) -> ResultadoArchivo:
         """Resuelve el limpiador de un archivo, lo ejecuta y describe el desenlace."""
         if not ruta.is_file():
-            return ResultadoArchivo(ruta, None, False, "El archivo ya no existe")
+            return ResultadoArchivo(ruta, None, False, "El archivo ya no existe", "error")
 
         limpiador = ProveedorLimpiadores.obtener_segun_archivo(ruta)
         if limpiador is None:
-            return ResultadoArchivo(ruta, None, False, "Formato no soportado")
+            return ResultadoArchivo(
+                ruta, None, False, "No es una imagen ni un video", "omitido"
+            )
 
         disponible, motivo = limpiador.esta_disponible()
         if not disponible:
-            return ResultadoArchivo(ruta, None, False, motivo)
+            return ResultadoArchivo(ruta, None, False, motivo, "omitido")
 
         try:
             ruta_salida = ProcesadorEnLote._ruta_salida_libre(ruta, carpeta_destino)
         except DestinoInvalido as error:
-            return ResultadoArchivo(ruta, None, False, str(error))
+            return ResultadoArchivo(ruta, None, False, str(error), "error")
 
-        exito = limpiador.limpiar(ruta, ruta_salida)
-        mensaje = "Limpiado" if exito else "Fallo al limpiar (ver consola)"
-        return ResultadoArchivo(ruta, ruta_salida if exito else None, exito, mensaje)
+        if limpiador.limpiar(ruta, ruta_salida):
+            return ResultadoArchivo(ruta, ruta_salida, True, "Metadatos eliminados", "limpiado")
+        return ResultadoArchivo(ruta, None, False, "No se pudo procesar", "error")
 
     @staticmethod
     def _ruta_salida_libre(ruta: Path, carpeta_destino: Path) -> Path:

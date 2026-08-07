@@ -143,9 +143,18 @@ El informe de un único archivo. Es inmutable (`frozen=True`) para poder cruzar 
 | Campo | Tipo | Significado |
 |---|---|---|
 | `ruta_origen` | `Path` | Archivo que se intentó limpiar. |
-| `ruta_salida` | `Path \| None` | Dónde quedó el resultado. `None` si falló. |
-| `exito` | `bool` | Si la operación terminó bien. |
-| `mensaje` | `str` | Texto legible para mostrar en pantalla ("Limpiado", "Formato no soportado", "FFmpeg no está instalado..."). |
+| `ruta_salida` | `Path \| None` | Dónde quedó el resultado. `None` si no se generó. |
+| `exito` | `bool` | Atajo para "hay un archivo de salida". |
+| `mensaje` | `str` | Texto legible para mostrar en pantalla. |
+| `codigo` | `str` | `"limpiado"`, `"omitido"` o `"error"`. |
+
+**Por qué `codigo` y no solo `exito`:** para el usuario, un `.txt` en la cola y un JPEG corrupto no son lo mismo. El primero es un archivo que no le correspondía a esta herramienta; el segundo es un fallo real. Un booleano los agrupa y obliga a la interfaz a pintar ambos de rojo, haciendo que el usuario busque un problema donde no lo hay. Los tres códigos permiten a la interfaz dar a cada uno su color y su lenguaje.
+
+| Código | Cuándo | Color en la interfaz |
+|---|---|---|
+| `limpiado` | Se procesó correctamente | Verde |
+| `omitido` | No había nada que hacer: formato no soportado, o FFmpeg ausente | Ámbar |
+| `error` | Se intentó y falló: archivo desaparecido, destino inválido, fallo del limpiador | Rojo |
 
 #### Clase `ProcesadorEnLote`
 Administra la cola de procesamiento en paralelo mediante un grupo de hilos. Se usan hilos y no procesos porque el trabajo real —Pillow al codificar, FFmpeg como proceso externo— libera el GIL, de modo que los hilos dan paralelismo real sin el coste de arrancar intérpretes nuevos.
@@ -191,48 +200,63 @@ Genera las vistas previas de la vista de detalle. Vive en `nucleo/` y no en `int
 
 Componente que encapsula el visor de la cola con sus dos presentaciones. Existe como módulo aparte porque la lógica de dos vistas, miniaturas asíncronas y estado por fila desbordaba la ventana principal.
 
+**Constante de módulo `ESTADOS`:** diccionario que asocia cada código de estado con su símbolo, etiqueta, color de texto y color de fondo. Es la única fuente de verdad del aspecto de los chips; añadir un estado nuevo es añadir una entrada.
+
 #### Clase `FilaArchivo`
-Estado de un archivo en la cola, **independiente de cómo se dibuje**. Es lo que permite alternar de vista sin perder resultados: los widgets se destruyen y recrean, este objeto no.
+Estado de un archivo en la cola, **independiente de cómo se dibuje**. Es lo que permite alternar de vista, quitar filas o redibujar sin perder resultados: los widgets se destruyen y recrean, este objeto no.
 
 | Miembro | Tipo | Significado |
 |---|---|---|
 | `ruta` | `Path` | Archivo de origen |
-| `estado` | `str` | `"pendiente"`, `"ok"` o `"error"` |
+| `estado` | `str` | Clave de `ESTADOS`: `pendiente`, `limpiado`, `omitido`, `error` |
 | `mensaje` | `str` | Texto legible del desenlace |
 | `ruta_salida` | `Path \| None` | Dónde quedó la copia limpia |
+| `marcada` | `bool` | Si el usuario la seleccionó para quitarla |
 | `aplicar(resultado)` | método | Vuelca un `ResultadoArchivo` sobre la fila |
+| `reiniciar()` | método | La devuelve a pendiente |
 | `tamano_legible` | propiedad | Tamaño formateado (`2.4 MB`), o `?` si el archivo ya no es accesible |
 
 #### Clase `VistaCola(ctk.CTkFrame)`
+
+Recibe un callback `al_cambiar_seleccion(marcadas: int)` con el que la ventana principal mantiene al día su barra de selección. La vista no conoce esos widgets; solo avisa de que algo cambió.
 
 **Métodos públicos** (todos desde el hilo principal):
 
 | Método | Qué hace |
 |---|---|
-| `establecer_modo(modo)` | Alterna entre `"lista"` y `"detalle"`, conservando el estado de la cola |
-| `cargar(rutas)` | Sustituye la cola por archivos pendientes |
+| `establecer_modo(modo)` | Alterna entre `"lista"` y `"detalle"`, conservando el estado |
+| `cargar(rutas)` | Sustituye la cola entera |
+| `agregar(rutas)` | **Suma** a la cola ignorando repetidos; devuelve cuántos añadió |
+| `quitar_marcados()` | Elimina las filas marcadas; devuelve cuántas quitó |
+| `marcar_todas(marcar)` | Marca o desmarca todas de golpe |
 | `vaciar(aviso=None)` | Descarta la cola; con `aviso`, lo muestra en lugar de las filas |
-| `reiniciar_estados()` | Devuelve todas las filas a pendiente antes de una corrida nueva |
+| `reiniciar_estados()` | Devuelve todas las filas a pendiente |
 | `actualizar_resultado(resultado)` | Aplica el desenlace de un archivo y refresca |
+| `bloquear(bloqueada)` | Desactiva las casillas mientras se procesa |
+| `rutas` | Propiedad: archivos actualmente en la cola, en orden |
+| `total_marcadas` | Propiedad: cuántas filas están marcadas |
 
 **Métodos internos relevantes:**
 
 | Método | Qué hace |
 |---|---|
-| `_dibujar_lista` | Rellena la caja de texto de solo lectura |
-| `_dibujar_detalle` | Destruye las tarjetas anteriores y crea una por fila |
-| `_crear_fila_detalle` | Construye una tarjeta: hueco de miniatura, nombre, metadatos y estado coloreado |
+| `_redibujar` | Destruye lo que creó y reconstruye la lista; también pinta el estado vacío |
+| `_crear_fila` | Construye una fila completa. Un solo método para ambas vistas: el modo solo decide si añade miniatura y línea de datos |
+| `_crear_chip_estado` | Etiqueta coloreada con símbolo y texto, a la derecha de la fila |
+| `_alternar_marca` | Cambia la marca y **recolorea solo esa fila** |
 | `_pedir_miniatura` | Lanza un hilo que genera la miniatura y **deposita el resultado en una cola** |
 | `_consumir_cola` | Vacía esa cola en el hilo principal y se reprograma cada 100 ms |
 | `_colocar_miniatura` | Coloca la imagen, o el texto "sin vista" si no hubo |
 
-**Tres decisiones que evitan fallos concretos:**
+**Cuatro decisiones que evitan fallos concretos:**
 
-1. **`_widgets_filas` en vez de `winfo_children()`.** Al redibujar el detalle hay que destruir las tarjetas anteriores, pero `winfo_children()` sobre un `CTkScrollableFrame` devuelve también el lienzo y la barra de desplazamiento internos de CustomTkinter. Destruirlos rompe el contenedor. El componente lleva su propia lista de lo que él creó y solo destruye eso.
+1. **`_widgets_filas` en vez de `winfo_children()`.** Al redibujar hay que destruir las filas anteriores, pero `winfo_children()` sobre un `CTkScrollableFrame` devuelve también el lienzo y la barra de desplazamiento internos de CustomTkinter. Destruirlos rompe el contenedor. El componente lleva su propia lista de lo que él creó y solo destruye eso.
 
 2. **`_imagenes_vivas`.** Tkinter no retiene referencias a las imágenes que muestra; sin una lista que las mantenga vivas, el recolector de basura las libera y los recuadros aparecen en blanco.
 
 3. **`_generacion`.** Un contador que sube en cada `cargar` o `vaciar`. Una miniatura que termina de generarse cuando su archivo ya no está en la cola se descarta, en lugar de pintarse sobre la fila equivocada.
+
+4. **`_contenedores`, indexado por `id(fila)`.** Marcar una casilla solo recolorea su propio marco. Redibujar la lista entera reconstruiría todas las filas y haría parpadear las miniaturas en la vista de detalle en cada clic.
 
 ---
 
@@ -271,6 +295,11 @@ Por eso el hilo trabajador no toca Tkinter en absoluto. Deposita cada novedad en
 | Método | Disparador | Qué hace |
 |---|---|---|
 | `_cambiar_vista` | Conmutador Lista/Detalle | Traduce la etiqueta del botón al modo interno y lo delega a `VistaCola`. |
+| `_al_cambiar_seleccion` | Callback de `VistaCola` | Sincroniza la barra de selección: activa o desactiva "Quitar", le pone el recuento, actualiza el contador y marca la casilla general **solo si lo están todas** las filas. |
+| `_agregar_archivos` | Botón "Agregar archivos" | Suma a la cola en vez de reemplazarla, e informa de cuántos se añadieron y cuántos ya estaban. |
+| `_marcar_todos` | Casilla "Marcar todos" | Propaga el valor de la casilla a toda la cola. |
+| `_quitar_marcados` | Botón "Quitar de la cola" | Saca las filas marcadas e informa de cuántas fueron. |
+| `_bloquear_controles` | Inicio y fin del proceso | Desactiva o reactiva de una vez todo lo que modifica la cola. Centralizado en un método para que **ninguna ruta de salida deje la interfaz a medio bloquear**. |
 | `_avisar_si_falta_ffmpeg` | Arranque | Comprueba FFmpeg y, si falta, lo avisa **dentro de la ventana** (etiqueta de estado + visor), no con un diálogo modal: las imágenes siguen siendo procesables y frenar el arranque sería desproporcionado. |
 | `_seleccionar_archivos` | Botón "Seleccionar archivos" | Abre `askopenfilenames` con el filtro generado por `ProveedorLimpiadores.patron_dialogo()`, guarda las rutas y carga la cola. Si el usuario cancela, no toca nada. |
 | `_seleccionar_carpeta_destino` | Botón "Carpeta destino" | Abre `askdirectory` y actualiza la ruta y su etiqueta. |
@@ -360,6 +389,14 @@ Probado en Windows 11 con Python 3.14.6, Pillow 12.3.0, CustomTkinter 6.0.0 y FF
 - Las 3 miniaturas (JPEG, PNG y fotograma de MP4) se generan y colocan; la caché devuelve el mismo objeto en la segunda petición.
 - Procesamiento completo lanzado desde la interfaz: 3 correctos, barra al 100 %, nombres idénticos a los originales.
 - Intentar procesar con destino = origen deja el botón activo y muestra el diálogo de error.
+
+**Selección y estados (v1.2):**
+- Agregar en dos tandas acumula (2 + 2 = 4) en vez de reemplazar; volver a agregar los mismos devuelve 0 añadidos y la cola no cambia.
+- Marcar una fila deja el contador en "1 de 4 marcados" y el botón en "Quitar de la cola (1)"; quitarla deja 3 filas, sin el archivo colado, y el botón vuelve a deshabilitarse.
+- "Marcar todos" marca las 3 y desmarcarlo las libera.
+- Tras procesar un lote con un `.txt` mezclado: los tres medios quedan en `limpiado` y el `.txt` en **`omitido`** (no `error`), con mensaje "No es una imagen ni un vídeo".
+- Los controles bloqueados durante el proceso vuelven a activarse al terminar.
+- Verificado además visualmente sobre capturas de la ventana real, en las tres situaciones: cola cargada, vista de detalle con miniaturas y lote ya procesado con estados mixtos.
 
 **Empaquetado:**
 - `LimpiadorMetadatos.exe` de 55,1 MB generado con PyInstaller 6.21.0.
