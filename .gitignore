@@ -1,0 +1,25 @@
+# Compilaciones
+build/
+dist/
+build_debug/
+dist_debug/
+build_check/
+dist_check/
+*.spec.bak
+
+# FFmpeg descargado en la maquina que compila (98 MB, supera el limite
+# recomendado de GitHub). Cada compilacion lo obtiene con obtener_ffmpeg.py.
+recursos/ffmpeg
+recursos/ffmpeg.exe
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini

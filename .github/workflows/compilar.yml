@@ -1,0 +1,110 @@
+name: Compilar ejecutables
+
+# Compila la aplicacion para Windows y macOS. Se dispara al subir una etiqueta
+# de version (v1.0.0, v1.1.0...), manualmente desde la pestaña Actions, y en
+# cada push a main para detectar roturas pronto.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # FFmpeg pesa ~98 MB: cachearlo ahorra la descarga en cada ejecucion
+      - name: Cache de FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: recursos
+          key: ffmpeg-windows-v1
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requerimientos.txt pyinstaller
+
+      - name: Obtener FFmpeg
+        run: python empaquetado/obtener_ffmpeg.py
+
+      - name: Compilar
+        run: python -m PyInstaller empaquetado/limpiador.spec --noconfirm --distpath dist --workpath build
+
+      - name: Autocomprobacion del paquete
+        run: |
+          python -m PyInstaller --onefile --console --name Verificador `
+            --distpath dist_check --workpath build_check --specpath build_check `
+            --add-data "$((python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'));customtkinter" `
+            --add-data "$PWD\recursos\ffmpeg.exe;recursos" `
+            --hidden-import PIL._tkinter_finder --paths "$PWD" `
+            empaquetado/verificar_paquete.py --noconfirm
+          ./dist_check/Verificador.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LimpiadorMetadatos-Windows
+          path: dist/LimpiadorMetadatos.exe
+
+      - name: Publicar en la Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LimpiadorMetadatos.exe
+
+  macos:
+    name: macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache de FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: recursos
+          key: ffmpeg-macos-v1
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requerimientos.txt pyinstaller
+
+      - name: Compilar y empaquetar
+        run: |
+          chmod +x empaquetado/construir_mac.sh
+          ./empaquetado/construir_mac.sh
+
+      - name: Autocomprobacion del paquete
+        run: |
+          python -m PyInstaller --onefile --console --name Verificador \
+            --distpath dist_check --workpath build_check --specpath build_check \
+            --add-data "$(python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'):customtkinter" \
+            --add-data "$PWD/recursos/ffmpeg:recursos" \
+            --hidden-import PIL._tkinter_finder --paths "$PWD" \
+            empaquetado/verificar_paquete.py --noconfirm
+          ./dist_check/Verificador
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LimpiadorMetadatos-macOS
+          path: dist/LimpiadorMetadatos.dmg
+
+      - name: Publicar en la Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LimpiadorMetadatos.dmg
