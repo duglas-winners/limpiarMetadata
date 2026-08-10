@@ -10,6 +10,8 @@ from typing import Callable, Optional
 
 import customtkinter as ctk
 
+from nucleo.medios import NIVELES as NIVELES_COMPRESION
+
 from .estilos import (
     COLOR_PELIGRO,
     COLOR_PELIGRO_HOVER,
@@ -139,37 +141,61 @@ class BarraCompresion(ctk.CTkFrame):
     hace falta para decidir si comprimir o cual quitar de la cola.
     """
 
-    def __init__(self, maestro, al_cambiar: Callable[[], None]):
+    def __init__(self, maestro, al_cambiar: Callable[[], None], nivel_inicial: str):
         super().__init__(maestro, fg_color="transparent")
 
+        self._al_cambiar = al_cambiar
+
         self.comprimir = ctk.CTkCheckBox(
-            self, text="Comprimir videos", width=24, command=al_cambiar
+            self, text="Comprimir videos", width=24, command=self._al_alternar
         )
         self.comprimir.pack(side="left", padx=(10, 10))
+
+        # El selector de nivel solo aparece con la compresion marcada: sin ella
+        # no hace nada, y un control inerte invita a probarlo sin efecto.
+        self.selector_nivel = ctk.CTkSegmentedButton(
+            self, values=list(NIVELES_COMPRESION), command=lambda _: al_cambiar(),
+            width=320,
+        )
+        self.selector_nivel.set(
+            nivel_inicial if nivel_inicial in NIVELES_COMPRESION else "Media"
+        )
 
         self.etiqueta_nota = ctk.CTkLabel(
             self, text="", anchor="w", text_color=COLOR_TEXTO_TENUE,
             font=ctk.CTkFont(size=11),
         )
-        self.etiqueta_nota.pack(side="left")
+        self.etiqueta_nota.pack(side="left", padx=(6, 0))
+
+    def _al_alternar(self) -> None:
+        """Muestra u oculta el selector de nivel segun la casilla."""
+        if self.activada:
+            # Se inserta antes de la nota para que quede junto a la casilla
+            self.selector_nivel.pack(side="left", padx=(4, 8), before=self.etiqueta_nota)
+        else:
+            self.selector_nivel.pack_forget()
+        self._al_cambiar()
 
     @property
     def activada(self) -> bool:
         return bool(self.comprimir.get())
 
-    def mostrar_nota(self, hay_videos: bool) -> None:
+    @property
+    def nivel(self) -> str:
+        return self.selector_nivel.get()
+
+    def mostrar_nota(self, hay_videos: bool, descripcion: str = "") -> None:
         if not self.activada:
             self.etiqueta_nota.configure(text="")
-        elif hay_videos:
-            self.etiqueta_nota.configure(
-                text="Recodifica: mas lento y con algo de perdida de calidad. "
-                     "Cada video muestra a cuanto bajaria."
-            )
-        else:
+        elif not hay_videos:
             self.etiqueta_nota.configure(text="(no hay videos en la cola)")
+        else:
+            self.etiqueta_nota.configure(text=descripcion)
 
     def bloquear(self, bloquear: bool) -> None:
-        self.comprimir.configure(state="disabled" if bloquear else "normal")
+        estado = "disabled" if bloquear else "normal"
+        self.comprimir.configure(state=estado)
+        self.selector_nivel.configure(state=estado)
 
 
 class PanelProgreso(ctk.CTkFrame):

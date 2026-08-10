@@ -60,6 +60,7 @@ class VistaCola(ctk.CTkFrame):
         self._aviso: Optional[str] = None
         self._bloqueada = False  # durante el procesamiento no se puede editar
         self._comprimiendo = False
+        self._nivel = medios.NIVEL_POR_DEFECTO
 
         # Widgets que este componente crea y por tanto puede destruir. No se usa
         # `winfo_children()` del marco desplazable: ahi viven tambien el lienzo y
@@ -154,14 +155,24 @@ class VistaCola(ctk.CTkFrame):
         self._bloqueada = bloqueada
         self._redibujar()
 
-    def establecer_compresion(self, activa: bool) -> None:
+    def establecer_compresion(self, activa: bool, nivel: str) -> None:
         """
-        Indica si la compresion esta marcada, para que cada fila muestre el
-        techo al que bajaria su peso.
+        Indica si la compresion esta marcada y con que nivel, para que cada
+        fila muestre el techo al que bajaria su peso.
+
+        Al cambiar el nivel se descartan las estimaciones ya calculadas: eran
+        de otro ajuste y mostrarlas seria mentir. Se recalculan solas, y como
+        el analisis del video esta cacheado, es cuestion de milisegundos.
         """
-        if activa == self._comprimiendo:
+        if activa == self._comprimiendo and nivel == self._nivel:
             return
+
+        if nivel != self._nivel:
+            for fila in self.cola:
+                fila.estimado = None
+
         self._comprimiendo = activa
+        self._nivel = nivel
         self._redibujar()
 
     # Atajos que la ventana consulta para sus barras
@@ -364,9 +375,10 @@ class VistaCola(ctk.CTkFrame):
 
         generacion = self._generacion
         ruta = fila.ruta
+        nivel = self._nivel
 
         def trabajar():
-            estimado = medios.estimar_comprimido(ruta)
+            estimado = medios.estimar_comprimido(ruta, nivel)
             self._cola_calculos.put(("estimacion", ruta, estimado, generacion))
 
         threading.Thread(target=trabajar, daemon=True).start()

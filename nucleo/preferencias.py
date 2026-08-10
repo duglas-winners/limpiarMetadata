@@ -32,6 +32,10 @@ CARPETA_DESTINO_POR_DEFECTO = Path.home() / "Archivos_Limpiados"
 POR_DEFECTO: Dict[str, Any] = {
     "carpeta_destino": str(CARPETA_DESTINO_POR_DEFECTO),
     "modo_vista": "lista",
+    # El nivel si se recuerda; la casilla de comprimir no. Elegir el nivel es
+    # inofensivo si luego no se comprime, pero heredar la casilla marcada
+    # recodificaria con perdida sin que el usuario lo decidiera esta vez.
+    "nivel_compresion": "Media",
 }
 
 

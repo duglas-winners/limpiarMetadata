@@ -19,7 +19,7 @@ import customtkinter as ctk
 from limpiadores.base import OpcionesLimpieza
 from limpiadores.limpiador_video import LimpiadorVideo
 from limpiadores.proveedor import ProveedorLimpiadores
-from nucleo import preferencias
+from nucleo import medios, preferencias
 from nucleo.procesador import ProcesadorEnLote, ResultadoArchivo
 
 from .barras import BarraAcciones, BarraCompresion, BarraSeleccion, PanelProgreso
@@ -100,7 +100,10 @@ class VentanaPrincipal(ctk.CTk):
         )
         self.barra_seleccion.pack(fill="x", padx=15, pady=(8, 0))
 
-        self.barra_compresion = BarraCompresion(self, al_cambiar=self._actualizar_peso)
+        self.barra_compresion = BarraCompresion(
+            self, al_cambiar=self._al_cambiar_compresion,
+            nivel_inicial=self._preferencias.get("nivel_compresion", "Media"),
+        )
         self.barra_compresion.pack(fill="x", padx=15, pady=(6, 0))
 
         self.vista_cola = VistaCola(self, al_cambiar_seleccion=self._al_cambiar_seleccion)
@@ -234,14 +237,21 @@ class VentanaPrincipal(ctk.CTk):
 
     # ------------------------------------------------------ Peso y compresion --
 
+    def _al_cambiar_compresion(self):
+        """La casilla o el nivel cambiaron: recuerda el nivel y refresca."""
+        self._recordar("nivel_compresion", self.barra_compresion.nivel)
+        self._actualizar_peso()
+
     def _actualizar_peso(self):
         """
-        La casilla de compresion cambio, o la cola. Cada fila muestra su propio
-        peso y calcula su estimacion por su cuenta; aqui solo se le comunica si
-        la compresion esta activa y se refresca la nota.
+        Refresca la nota y comunica a la lista el ajuste vigente. Cada fila
+        calcula su propia estimacion; aqui no se agrega nada.
         """
-        self.barra_compresion.mostrar_nota(self.vista_cola.tiene_videos)
-        self.vista_cola.establecer_compresion(self.barra_compresion.activada)
+        nivel = self.barra_compresion.nivel
+        descripcion = medios.NIVELES.get(nivel, {}).get("descripcion", "")
+
+        self.barra_compresion.mostrar_nota(self.vista_cola.tiene_videos, descripcion)
+        self.vista_cola.establecer_compresion(self.barra_compresion.activada, nivel)
 
     # ----------------------------------------------------------- Proceso --
 
@@ -266,7 +276,8 @@ class VentanaPrincipal(ctk.CTk):
             return
 
         self.opciones_en_proceso = OpcionesLimpieza(
-            comprimir_video=self.barra_compresion.activada
+            comprimir_video=self.barra_compresion.activada,
+            nivel_compresion=self.barra_compresion.nivel,
         )
         self._completados = 0
         self._total_lote = len(archivos)

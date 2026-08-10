@@ -101,7 +101,15 @@ Tres decisiones deliberadas:
 
 ### Zona 3b — Barra de compresión
 
-Una sola casilla, **Comprimir vídeos**, con una nota al lado que explica su coste: *"Recodifica: más lento y con algo de pérdida de calidad. Cada vídeo muestra a cuánto bajaría."*
+| Elemento | Cuándo se ve | Contenido |
+|---|---|---|
+| Casilla **Comprimir vídeos** | Siempre | Activa la recodificación |
+| Selector de nivel | **Solo con la casilla marcada** | Ligera · Media · Fuerte · Máxima |
+| Nota | Solo con la casilla marcada | Describe el nivel elegido |
+
+**El selector aparece y desaparece con la casilla.** Sin compresión activa no hace nada, y un control inerte invita a manipularlo esperando un efecto que no llega.
+
+**Cambiar de nivel repinta las estimaciones de todas las filas al instante.** Las cifras ya calculadas se descartan —eran de otro ajuste y mostrarlas sería mentir— y se recalculan; como el análisis del vídeo está cacheado, es cuestión de milisegundos. Eso convierte al selector en una herramienta de exploración: el usuario prueba los cuatro y elige por el número que quiere ver, sin procesar nada.
 
 No lleva ninguna cifra agregada. El peso vive en las filas (ver Zona 4).
 

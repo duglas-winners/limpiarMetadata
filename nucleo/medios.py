@@ -17,9 +17,8 @@ from typing import Optional
 from limpiadores.proveedor import ProveedorLimpiadores
 from recursos import ruta_ffmpeg
 
-# Bitrate de video objetivo segun la altura de la imagen, en kbps. Son valores
-# conservadores: buscan un archivo notablemente mas pequeño que conserve una
-# calidad razonable para compartir, no calidad de archivo maestro.
+# Bitrate de referencia para cada altura de imagen, en kbps: el que da buena
+# calidad a esa resolucion sin desperdiciar espacio.
 BITRATE_POR_ALTURA = (
     (2160, 12000),
     (1440, 6000),
@@ -34,6 +33,41 @@ BITRATE_AUDIO_KBPS = 128
 # Nunca comprimir a mas del 90% del bitrate original: si el video ya venia muy
 # comprimido, recodificarlo a un bitrate mayor lo agrandaria sin ganar nada.
 FACTOR_MAXIMO = 0.9
+
+# Niveles de compresion que el usuario elige.
+#
+# Cada uno combina dos palancas: cuanto bitrate se concede, y hasta que altura
+# se reduce la imagen. Bajar la resolucion es imprescindible en los niveles
+# fuertes: a bitrates bajos, un 720p limpio se ve claramente mejor que un 1080p
+# lleno de bloques, porque el codificador reparte los mismos bits entre menos
+# pixeles.
+#
+# `altura_max` None conserva la resolucion original. El escalado solo se aplica
+# si el video es mas alto: nunca se agranda un video pequeño.
+NIVELES = {
+    "Ligera": {
+        "altura_max": None,
+        "factor": 1.0,
+        "descripcion": "Mantiene la resolucion. Reduccion moderada.",
+    },
+    "Media": {
+        "altura_max": 1080,
+        "factor": 0.55,
+        "descripcion": "Buen equilibrio entre tamaño y calidad.",
+    },
+    "Fuerte": {
+        "altura_max": 720,
+        "factor": 0.80,
+        "descripcion": "Reduce a 720p. Ideal para compartir.",
+    },
+    "Maxima": {
+        "altura_max": 480,
+        "factor": 0.90,
+        "descripcion": "Reduce a 480p. El archivo mas pequeño.",
+    },
+}
+
+NIVEL_POR_DEFECTO = "Media"
 
 _cache: dict[str, Optional["InfoVideo"]] = {}
 _candado = Lock()
@@ -130,14 +164,32 @@ def _leer_info(ruta: Path) -> Optional[InfoVideo]:
     return InfoVideo(duracion, ancho, alto, bitrate)
 
 
-def bitrate_objetivo(info: InfoVideo) -> int:
+def altura_objetivo(info: InfoVideo, nivel: str = NIVEL_POR_DEFECTO) -> int:
+    """
+    Altura a la que se reducira la imagen. Nunca agranda un video pequeño.
+    """
+    limite = NIVELES.get(nivel, NIVELES[NIVEL_POR_DEFECTO])["altura_max"]
+    if limite is None:
+        return info.alto
+    return min(info.alto, limite)
+
+
+def bitrate_objetivo(info: InfoVideo, nivel: str = NIVEL_POR_DEFECTO) -> int:
     """
     Bitrate de video al que se comprimira, en kbps.
 
-    Parte del valor recomendado para la altura del video y lo limita para no
-    superar el 90% del bitrate original: comprimir nunca debe agrandar.
+    Parte del valor de referencia para la altura *resultante* —no la original,
+    porque si se va a escalar hacen falta menos bits— y le aplica el factor del
+    nivel elegido.
+
+    Se limita ademas al 90% del bitrate original: comprimir nunca debe
+    agrandar. Ese tope solo actua cuando el video ya venia muy comprimido.
     """
-    objetivo = next(kbps for altura, kbps in BITRATE_POR_ALTURA if info.alto >= altura)
+    ajustes = NIVELES.get(nivel, NIVELES[NIVEL_POR_DEFECTO])
+    alto = altura_objetivo(info, nivel)
+
+    referencia = next(kbps for altura, kbps in BITRATE_POR_ALTURA if alto >= altura)
+    objetivo = int(referencia * ajustes["factor"])
 
     if info.bitrate_kbps > 0:
         bitrate_video_actual = max(info.bitrate_kbps - BITRATE_AUDIO_KBPS, 1)
@@ -146,7 +198,7 @@ def bitrate_objetivo(info: InfoVideo) -> int:
     return max(objetivo, 100)  # suelo: por debajo el resultado es inservible
 
 
-def estimar_comprimido(ruta: Path) -> int:
+def estimar_comprimido(ruta: Path, nivel: str = NIVEL_POR_DEFECTO) -> int:
     """
     Estima en bytes el tamaño que tendria el video tras comprimirlo.
 
@@ -171,7 +223,7 @@ def estimar_comprimido(ruta: Path) -> int:
     if info is None:
         return actual
 
-    kbps_total = bitrate_objetivo(info) + BITRATE_AUDIO_KBPS
+    kbps_total = bitrate_objetivo(info, nivel) + BITRATE_AUDIO_KBPS
     estimado = int(kbps_total * 1000 * info.duracion_s / 8)
 
     # Si el calculo da mas que el original, comprimir no aportaria nada y el

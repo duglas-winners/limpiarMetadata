@@ -72,7 +72,9 @@ Arriba a la derecha hay un conmutador con dos vistas. Puedes cambiar entre ellas
 | **Lista** | Una línea por archivo | Lotes grandes, cuando solo quieres ver el avance |
 | **Detalle** | Miniatura de cada archivo, tamaño, formato y resultado | Cuando quieres confirmar visualmente qué estás procesando |
 
-**Ambas vistas muestran el peso de cada archivo.** Con la compresión marcada, cada vídeo indica además a cuánto bajaría: `24.4 MB → max. 3.9 MB`. Así ves de un vistazo cuál es el archivo pesado del lote, que es lo que necesitas para decidir si comprimir o cuál quitar.
+**Ambas vistas muestran el peso de cada archivo.** Con la compresión marcada, cada vídeo indica además a cuánto bajaría: `32.5 MB → max. 4.7 MB`. Así ves de un vistazo cuál es el archivo pesado del lote, que es lo que necesitas para decidir si comprimir o cuál quitar.
+
+Las cifras **se actualizan al instante** cuando cambias el nivel de compresión, así que puedes probar los cuatro y quedarte con el que te dé el tamaño que buscas antes de procesar nada.
 
 En la vista **Detalle** verás además una vista previa de cada imagen y, en los vídeos, un fotograma del primer segundo. Las miniaturas se generan en segundo plano: aparecen solas en un par de segundos, y la aplicación sigue respondiendo con normalidad mientras tanto.
 
@@ -108,6 +110,32 @@ Verás **dos barras de progreso**:
 La de arriba existe precisamente para los archivos grandes: comprimir un vídeo de 2 GB lleva minutos, y sin ella la pantalla parecería congelada. Mientras esa barra se mueva, la aplicación está trabajando.
 
 **Cuánto tarda.** Las imágenes, menos de un segundo. Los vídeos **sin comprimir**, unos segundos aunque pesen varios GB, porque solo se reempaquetan. Los vídeos **con la compresión marcada**, bastante más: hay que recodificar cada fotograma, y puede llevar varios minutos por vídeo. Al comprimir se procesa un archivo a la vez, para dedicarle toda la potencia del equipo.
+
+### Paso 5b — Ajustar cuánto se comprime
+
+Al marcar **Comprimir vídeos** aparecen cuatro niveles. Elige según lo pequeño que necesites el archivo:
+
+| Nivel | Resolución | Reducción típica | Cuándo usarlo |
+|---|---|---|---|
+| **Ligera** | La original | ~60% menos | Quieres conservar la calidad al máximo |
+| **Media** | Hasta 1080p | ~78% menos | Equilibrio para la mayoría de casos |
+| **Fuerte** | Baja a 720p | ~84% menos | Enviar por WhatsApp, correo o subir a la nube |
+| **Máxima** | Baja a 480p | ~90% menos | El archivo más pequeño posible |
+
+**Por qué los niveles fuertes bajan la resolución.** Cuando hay pocos bits disponibles, un 720p limpio se ve claramente mejor que un 1080p lleno de cuadros: el codificador reparte los mismos bits entre menos píxeles, así que cada uno queda mejor definido. Bajar resolución es lo que permite llegar a archivos muy pequeños sin que se vean mal.
+
+**Nunca se agranda un vídeo.** Si el tuyo ya es 480p, elegir "Fuerte" no lo escala a 720p; se queda como está y solo se ajusta el bitrate.
+
+Un ejemplo real, con un vídeo de 335 MB:
+
+| Nivel | Quedaría en |
+|---|---|
+| Ligera | ~128 MB |
+| Media | ~72 MB |
+| Fuerte | ~54 MB |
+| Máxima | ~33 MB |
+
+La aplicación recuerda el nivel que elijas para la próxima vez. **La casilla de comprimir no se recuerda**, a propósito: recodificar pierde algo de calidad y conviene que sea una decisión consciente cada vez.
 
 ### Paso 6 — Revisar el resultado
 

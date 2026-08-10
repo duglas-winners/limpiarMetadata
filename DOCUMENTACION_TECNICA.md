@@ -210,6 +210,25 @@ Genera las vistas previas de la vista de detalle. Vive en `nucleo/` y no en `int
 | `_desde_video` | `(ruta, lado) -> Image \| None` | Extrae un fotograma con FFmpeg volcándolo a PNG por `stdout`, sin archivo temporal. Busca en el **segundo 1** para evitar los fundidos en negro que abren muchos vídeos, y reintenta desde el inicio si el clip es más corto. |
 | `limpiar_cache` | `() -> None` | Libera las miniaturas guardadas. Se llama al vaciar la cola. |
 
+#### Niveles de compresión
+
+`NIVELES` asocia cada nombre visible con dos palancas: cuánto bitrate se concede (`factor`) y hasta qué altura se reduce la imagen (`altura_max`).
+
+| Nivel | `altura_max` | `factor` | Sobre 1080p |
+|---|---|---|---|
+| Ligera | — | 1.00 | 1080p @ 3000 kbps |
+| Media | 1080 | 0.55 | 1080p @ 1650 kbps |
+| Fuerte | 720 | 0.80 | 720p @ 1200 kbps |
+| Máxima | 480 | 0.90 | 480p @ 720 kbps |
+
+**Por qué dos palancas y no solo el bitrate.** A bitrates bajos, un 720p limpio se ve claramente mejor que un 1080p lleno de artefactos: el codificador reparte los mismos bits entre menos píxeles. Sin la palanca de resolución, los niveles fuertes producirían archivos pequeños pero feos.
+
+`bitrate_objetivo` parte del valor de referencia de la altura **resultante**, no de la original — si se va a escalar hacen falta menos bits — y le aplica el factor. `altura_objetivo` nunca agranda: un vídeo 480p se queda en 480p en todos los niveles.
+
+Medido sobre 1080p a 8 Mbps, el resultado real cae entre un 1% y un 5% por debajo del techo estimado en los cuatro niveles.
+
+---
+
 ### 3.3 `nucleo/preferencias.py`
 
 Ajustes que sobreviven al cierre de la aplicación. Se guardan en un JSON dentro de la carpeta que cada sistema destina a configuración:

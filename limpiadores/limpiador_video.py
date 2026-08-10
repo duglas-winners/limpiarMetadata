@@ -56,7 +56,7 @@ class LimpiadorVideo(LimpiadorBase):
         duracion = info.duracion_s if info else 0.0
 
         if opciones.comprimir_video:
-            argumentos = self._argumentos_compresion(info)
+            argumentos = self._argumentos_compresion(info, opciones.nivel_compresion)
         else:
             argumentos = ["-map", "0", "-c", "copy"]
 
@@ -169,7 +169,7 @@ class LimpiadorVideo(LimpiadorBase):
         return max(0.0, min(segundos / duracion, 1.0))
 
     @staticmethod
-    def _argumentos_compresion(info) -> list[str]:
+    def _argumentos_compresion(info, nivel: str) -> list[str]:
         """
         Argumentos de recodificacion a bitrate objetivo.
 
@@ -178,15 +178,17 @@ class LimpiadorVideo(LimpiadorBase):
         promete al usuario una estimacion antes de procesar. Con bitrate
         objetivo esa estimacion es fiable.
         """
-        from nucleo.medios import BITRATE_AUDIO_KBPS, bitrate_objetivo
+        from nucleo.medios import BITRATE_AUDIO_KBPS, altura_objetivo, bitrate_objetivo
 
         if info is None:
             # Sin datos para calcular el objetivo, se remuxea sin comprimir en
             # vez de arriesgar un bitrate arbitrario sobre un archivo del usuario.
             return ["-map", "0", "-c", "copy"]
 
-        kbps = bitrate_objetivo(info)
-        return [
+        kbps = bitrate_objetivo(info, nivel)
+        alto = altura_objetivo(info, nivel)
+
+        argumentos = [
             "-map", "0:v:0",              # una sola pista de video
             "-map", "0:a?",               # el audio, si lo hay
             "-c:v", "libx264",
@@ -195,7 +197,16 @@ class LimpiadorVideo(LimpiadorBase):
             "-bufsize", f"{kbps * 2}k",
             "-preset", "medium",
             "-pix_fmt", "yuv420p",        # compatibilidad amplia de reproduccion
+        ]
+
+        if alto < info.alto:
+            # -2 en la anchura la calcula manteniendo la proporcion y
+            # redondeando a par, que es lo que exige el codificador H.264.
+            argumentos += ["-vf", f"scale=-2:{alto}"]
+
+        argumentos += [
             "-c:a", "aac",
             "-b:a", f"{BITRATE_AUDIO_KBPS}k",
             "-movflags", "+faststart",    # permite reproducir mientras se descarga
         ]
+        return argumentos
