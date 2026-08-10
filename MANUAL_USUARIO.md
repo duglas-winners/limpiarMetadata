@@ -89,11 +89,19 @@ Si no eliges nada, se usa `C:\Users\TuUsuario\Archivos_Limpiados`, que se crea s
 Pulsa el botón verde **Limpiar metadatos**.
 
 - El botón se desactiva y cambia a "Procesando..." mientras trabaja.
-- La barra azul avanza a medida que se completan archivos.
 - Cada archivo terminado muestra su resultado, en cualquiera de las dos vistas.
 - **La ventana sigue respondiendo**: puedes moverla, minimizarla o cambiar de vista sin problema. No la cierres hasta que termine.
 
-Las imágenes tardan menos de un segundo cada una. Los vídeos suelen tardar unos segundos incluso si pesan varios GB, porque no se recodifican, solo se reempaquetan.
+Verás **dos barras de progreso**:
+
+| Barra | Qué indica |
+|---|---|
+| **Arriba** (fina) | El archivo que se está procesando ahora y su porcentaje |
+| **Abajo** (gruesa) | El avance del lote completo: "2 de 5 — 48%" |
+
+La de arriba existe precisamente para los archivos grandes: comprimir un vídeo de 2 GB lleva minutos, y sin ella la pantalla parecería congelada. Mientras esa barra se mueva, la aplicación está trabajando.
+
+**Cuánto tarda.** Las imágenes, menos de un segundo. Los vídeos **sin comprimir**, unos segundos aunque pesen varios GB, porque solo se reempaquetan. Los vídeos **con la compresión marcada**, bastante más: hay que recodificar cada fotograma, y puede llevar varios minutos por vídeo. Al comprimir se procesa un archivo a la vez, para dedicarle toda la potencia del equipo.
 
 ### Paso 6 — Revisar el resultado
 

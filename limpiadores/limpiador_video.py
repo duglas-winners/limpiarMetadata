@@ -1,5 +1,7 @@
 import subprocess
+import threading
 from pathlib import Path
+from typing import Callable, Optional
 
 from recursos import ruta_ffmpeg
 
@@ -20,6 +22,9 @@ class LimpiadorVideo(LimpiadorBase):
         su resolucion. Reduce el tamaño de forma notable, tarda bastante mas y
         pierde algo de calidad.
 
+    En ambos modos informa de su avance: FFmpeg publica el instante que lleva
+    procesado y, conocida la duracion del video, eso da una fraccion exacta.
+
     Requiere el ejecutable de FFmpeg, incrustado en la aplicacion o del sistema.
     """
 
@@ -36,14 +41,22 @@ class LimpiadorVideo(LimpiadorBase):
         ruta_entrada: Path,
         ruta_salida: Path,
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
+        al_progresar: Optional[Callable[[float], None]] = None,
     ) -> bool:
         ejecutable = ruta_ffmpeg()
         if not ejecutable:
             print(f"No se puede procesar {ruta_entrada.name}: FFmpeg no disponible")
             return False
 
+        # Importacion diferida: `nucleo` depende de `limpiadores`, y hacerla
+        # arriba crearia un ciclo entre ambos paquetes.
+        from nucleo.medios import info_video
+
+        info = info_video(ruta_entrada)
+        duracion = info.duracion_s if info else 0.0
+
         if opciones.comprimir_video:
-            argumentos = self._argumentos_compresion(ruta_entrada)
+            argumentos = self._argumentos_compresion(info)
         else:
             argumentos = ["-map", "0", "-c", "copy"]
 
@@ -51,6 +64,10 @@ class LimpiadorVideo(LimpiadorBase):
             ejecutable,
             "-hide_banner",
             "-loglevel", "error",
+            "-nostats",
+            # Publica el avance en stdout como lineas clave=valor, formato
+            # pensado para que lo lea otro programa.
+            "-progress", "pipe:1",
             "-y",
             "-i", str(ruta_entrada),
             *argumentos,
@@ -70,23 +87,89 @@ class LimpiadorVideo(LimpiadorBase):
         ]
 
         try:
-            proceso = subprocess.run(
-                comando,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if proceso.returncode != 0:
-                print(f"FFmpeg fallo en {ruta_entrada.name}: {proceso.stderr.strip()}")
-                return False
-            return True
+            return self._ejecutar(comando, ruta_entrada, duracion, al_progresar)
         except Exception as error:
             print(f"Error procesando el video {ruta_entrada.name}: {error}")
             return False
 
+    # ---------------------------------------------------------- Ejecucion --
+
     @staticmethod
-    def _argumentos_compresion(ruta_entrada: Path) -> list[str]:
+    def _ejecutar(
+        comando: list[str],
+        ruta_entrada: Path,
+        duracion: float,
+        al_progresar: Optional[Callable[[float], None]],
+    ) -> bool:
+        """
+        Lanza FFmpeg leyendo su avance en vivo.
+
+        stdout lleva el progreso y stderr los errores. Se leen por separado y
+        stderr en un hilo aparte: si se dejara sin vaciar y llenara su buffer,
+        FFmpeg se bloquearia al escribir y el proceso quedaria colgado.
+        """
+        proceso = subprocess.Popen(
+            comando,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            bufsize=1,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+        errores: list[str] = []
+
+        def vaciar_errores():
+            if proceso.stderr:
+                errores.extend(proceso.stderr)
+
+        hilo_errores = threading.Thread(target=vaciar_errores, daemon=True)
+        hilo_errores.start()
+
+        if proceso.stdout:
+            for linea in proceso.stdout:
+                fraccion = LimpiadorVideo._fraccion(linea, duracion)
+                if fraccion is not None and al_progresar:
+                    al_progresar(fraccion)
+
+        proceso.wait()
+        hilo_errores.join(timeout=2)
+
+        if proceso.returncode != 0:
+            detalle = "".join(errores).strip()
+            print(f"FFmpeg fallo en {ruta_entrada.name}: {detalle}")
+            return False
+
+        if al_progresar:
+            al_progresar(1.0)
+        return True
+
+    @staticmethod
+    def _fraccion(linea: str, duracion: float) -> Optional[float]:
+        """
+        Traduce una linea de `-progress` a la fraccion completada.
+
+        Interesan dos claves: `out_time_us`, el instante ya procesado, y
+        `progress=end`, que marca el final. El resto se ignora.
+        """
+        linea = linea.strip()
+
+        if linea == "progress=end":
+            return 1.0
+
+        if not linea.startswith("out_time_us=") or duracion <= 0:
+            return None
+
+        valor = linea.split("=", 1)[1]
+        if not valor.isdigit():
+            return None
+
+        segundos = int(valor) / 1_000_000
+        return max(0.0, min(segundos / duracion, 1.0))
+
+    @staticmethod
+    def _argumentos_compresion(info) -> list[str]:
         """
         Argumentos de recodificacion a bitrate objetivo.
 
@@ -95,11 +178,8 @@ class LimpiadorVideo(LimpiadorBase):
         promete al usuario una estimacion antes de procesar. Con bitrate
         objetivo esa estimacion es fiable.
         """
-        # Importacion diferida: `nucleo` depende de `limpiadores`, y hacerla
-        # arriba crearia un ciclo entre ambos paquetes.
-        from nucleo.medios import BITRATE_AUDIO_KBPS, bitrate_objetivo, info_video
+        from nucleo.medios import BITRATE_AUDIO_KBPS, bitrate_objetivo
 
-        info = info_video(ruta_entrada)
         if info is None:
             # Sin datos para calcular el objetivo, se remuxea sin comprimir en
             # vez de arriesgar un bitrate arbitrario sobre un archivo del usuario.

@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from limpiadores.base import OPCIONES_POR_DEFECTO, OpcionesLimpieza
 from limpiadores.proveedor import ProveedorLimpiadores
@@ -50,11 +50,13 @@ class ProcesadorEnLote:
         carpeta_destino: Path,
         notificar_progreso: Callable[[ResultadoArchivo, int, int], None],
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
+        notificar_avance_archivo: Optional[Callable[[Path, float], None]] = None,
     ) -> List[ResultadoArchivo]:
         """
         Limpia cada archivo de `lista_archivos` y deja el resultado en
         `carpeta_destino`. Llama a `notificar_progreso` una vez por archivo
-        terminado, desde un hilo trabajador.
+        terminado, y a `notificar_avance_archivo` muchas veces mientras cada uno
+        se procesa. Ambas desde hilos trabajadores.
 
         Devuelve la lista completa de resultados al finalizar la cola.
         """
@@ -62,10 +64,14 @@ class ProcesadorEnLote:
         total = len(lista_archivos)
         resultados: List[ResultadoArchivo] = []
         completados = 0
+        hilos = self._hilos_para(opciones)
 
-        with ThreadPoolExecutor(max_workers=self.max_hilos) as ejecutor:
+        with ThreadPoolExecutor(max_workers=hilos) as ejecutor:
             futuros = {
-                ejecutor.submit(self._tarea_individual, ruta, carpeta_destino, opciones): ruta
+                ejecutor.submit(
+                    self._tarea_individual, ruta, carpeta_destino, opciones,
+                    notificar_avance_archivo,
+                ): ruta
                 for ruta in lista_archivos
             }
             for futuro in as_completed(futuros):
@@ -83,9 +89,24 @@ class ProcesadorEnLote:
 
         return resultados
 
+    def _hilos_para(self, opciones: OpcionesLimpieza) -> int:
+        """
+        Cuantos archivos procesar a la vez.
+
+        Al comprimir se baja a uno solo, por dos razones. La primera es de
+        rendimiento: x264 ya reparte su trabajo entre todos los nucleos, asi
+        que lanzar varias compresiones a la vez las hace competir y no acelera
+        nada. La segunda es de interfaz: con un unico archivo en curso, el
+        progreso individual que se muestra es inequivoco.
+        """
+        return 1 if opciones.comprimir_video else self.max_hilos
+
     @staticmethod
     def _tarea_individual(
-        ruta: Path, carpeta_destino: Path, opciones: OpcionesLimpieza
+        ruta: Path,
+        carpeta_destino: Path,
+        opciones: OpcionesLimpieza,
+        notificar_avance: Optional[Callable[[Path, float], None]] = None,
     ) -> ResultadoArchivo:
         """Resuelve el limpiador de un archivo, lo ejecuta y describe el desenlace."""
         if not ruta.is_file():
@@ -106,7 +127,12 @@ class ProcesadorEnLote:
         except DestinoInvalido as error:
             return ResultadoArchivo(ruta, None, False, str(error), "error")
 
-        if limpiador.limpiar(ruta, ruta_salida, opciones):
+        al_progresar = None
+        if notificar_avance:
+            def al_progresar(fraccion: float, _ruta=ruta):
+                notificar_avance(_ruta, fraccion)
+
+        if limpiador.limpiar(ruta, ruta_salida, opciones, al_progresar):
             mensaje = "Metadatos eliminados"
             if opciones.comprimir_video and ruta.suffix.lower() in ProveedorLimpiadores.FORMATOS_VIDEO:
                 antes, despues = ruta.stat().st_size, ruta_salida.stat().st_size

@@ -52,6 +52,8 @@ class VentanaPrincipal(ctk.CTk):
 
         self.carpeta_destino: Path = Path.home() / "Archivos_Limpiados"
         self.opciones_en_proceso = OpcionesLimpieza()
+        self._completados = 0
+        self._total_lote = 0
 
         self._construir_interfaz()
 
@@ -59,6 +61,7 @@ class VentanaPrincipal(ctk.CTk):
             self,
             ProcesadorEnLote(max_hilos=os.cpu_count() or 4),
             {
+                "parcial": self._al_avanzar_archivo,
                 "avance": self._al_avanzar,
                 "peso": self._al_llegar_estimacion,
                 "fin": self._finalizar_procesamiento,
@@ -245,9 +248,17 @@ class VentanaPrincipal(ctk.CTk):
         self.opciones_en_proceso = OpcionesLimpieza(
             comprimir_video=self.barra_compresion.activada
         )
+        self._completados = 0
+        self._total_lote = len(archivos)
+
         self._bloquear_controles(True)
-        self.progreso.reiniciar()
+        self.progreso.reiniciar(self._total_lote)
         self.vista_cola.reiniciar_estados()
+        self.progreso.informar(
+            "Comprimiendo: esto puede tardar varios minutos por video."
+            if self.opciones_en_proceso.comprimir_video
+            else "Procesando..."
+        )
 
         self.coordinador.procesar_lote(
             archivos, self.carpeta_destino, self.opciones_en_proceso
@@ -272,14 +283,44 @@ class VentanaPrincipal(ctk.CTk):
                 self.vista_cola.total_marcadas, len(self.vista_cola.filas)
             )
 
+    def _al_avanzar_archivo(self, carga):
+        """
+        Avance dentro del archivo en curso. Mueve la barra individual y tambien
+        la general, para que esta progrese de forma continua en vez de saltar
+        solo cuando un archivo termina.
+        """
+        ruta, fraccion = carga
+        self.progreso.mostrar_archivo(ruta.name, fraccion)
+        self.progreso.mostrar_lote(
+            self._completados, self._total_lote,
+            self._fraccion_lote(fraccion),
+        )
+
     def _al_avanzar(self, carga):
         """Un archivo mas terminado."""
         resultado, actual, total = carga
+        self._completados = actual
+
         self.vista_cola.actualizar_resultado(resultado)
-        self.progreso.avanzar(actual / total)
-        self.progreso.informar(
-            f"Procesando {actual} de {total}: {resultado.ruta_origen.name}"
-        )
+        self.progreso.mostrar_archivo(resultado.ruta_origen.name, 1.0)
+        self.progreso.mostrar_lote(actual, total, self._fraccion_lote(0.0))
+        # La linea de estado no repite aqui el archivo ni el recuento: ambos ya
+        # estan sobre las barras. Repetirlos ademas los desincroniza, porque
+        # este es el archivo que acaba de terminar y la barra ya muestra el
+        # siguiente. Conserva el aviso puesto al arrancar la corrida.
+
+    def _fraccion_lote(self, fraccion_actual: float) -> float:
+        """
+        Avance del lote: los archivos ya terminados mas lo que lleve el actual.
+
+        Solo se suma la fraccion parcial cuando queda algo por procesar; si no,
+        un archivo a medias podria empujar la barra por encima del 100%.
+        """
+        if not self._total_lote:
+            return 0.0
+        pendientes = self._total_lote - self._completados
+        parcial = fraccion_actual if pendientes > 0 else 0.0
+        return min((self._completados + parcial) / self._total_lote, 1.0)
 
     def _finalizar_procesamiento(self, resultados: List[ResultadoArchivo]):
         """Restaura la pantalla y muestra el resumen de la corrida."""
@@ -288,6 +329,10 @@ class VentanaPrincipal(ctk.CTk):
         errores = sum(1 for r in resultados if r.codigo == "error")
 
         self._bloquear_controles(False)
+        # Cierra ambas barras al 100%: si el ultimo archivo fallo temprano, su
+        # avance parcial habria dejado la barra a medias con el lote terminado.
+        self.progreso.mostrar_archivo("Completado", 1.0)
+        self.progreso.mostrar_lote(len(resultados), len(resultados), 1.0)
 
         partes = [f"{limpiados} limpiado" + ("s" if limpiados != 1 else "")]
         if omitidos:

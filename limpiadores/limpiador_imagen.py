@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Callable, Optional
 
 from PIL import Image
 
@@ -35,9 +36,14 @@ class LimpiadorImagen(LimpiadorBase):
         ruta_entrada: Path,
         ruta_salida: Path,
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
+        al_progresar: Optional[Callable[[float], None]] = None,
     ) -> bool:
         # `opciones` solo contiene ajustes de video por ahora; las imagenes se
         # recrean siempre igual, sin recompresion con perdida.
+        #
+        # No se informa de progreso intermedio: una imagen se procesa en un
+        # solo paso, en milisegundos. Repartirlo en fracciones seria inventar
+        # un detalle que no existe.
         try:
             with Image.open(ruta_entrada) as imagen:
                 formato = imagen.format or EXTENSION_A_FORMATO.get(

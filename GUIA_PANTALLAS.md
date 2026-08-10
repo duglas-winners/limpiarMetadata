@@ -33,8 +33,11 @@ Es la aplicación entera. Tamaño 880×680, mínimo 720×560.
 │  │ ☐  clip_boda.mp4                              (• En cola  )  │  │  (vista Lista)
 │  │                                                              │  │
 │  └──────────────────────────────────────────────────────────────┘  │
-│  ████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   │ ← Zona 5
-│                    3 archivos en la cola                           │
+│  fiesta.mp4 — 42%                                                  │
+│  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   │ ← Zona 5
+│  Progreso general: 1 de 3 — 48%                                    │
+│  ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   │
+│         Comprimiendo: esto puede tardar varios minutos.            │
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │                    Limpiar metadatos                         │  │ ← Zona 6
 │  └──────────────────────────────────────────────────────────────┘  │
@@ -154,12 +157,19 @@ Cuando no hay archivos, la lista no se queda en blanco: muestra *"No hay archivo
 
 ### Zona 5 — Indicadores de estado
 
-Dos elementos apilados que responden a preguntas distintas:
+**Dos** barras de progreso, no una, más una línea de estado:
 
 | Elemento | Responde a | Contenido |
 |---|---|---|
-| **Barra de progreso** | "¿Cuánto falta?" | De 0 a 1. Se reinicia a 0 en cada corrida nueva |
-| **Etiqueta de estado** | "¿Qué está pasando ahora mismo?" | Una sola línea, centrada, que cambia según el momento |
+| **Barra del archivo** (fina, arriba) | "¿Este archivo avanza?" | Nombre y porcentaje del archivo en curso |
+| **Barra del lote** (gruesa, abajo) | "¿Cuánto falta en total?" | "Progreso general: 2 de 5 — 48%" |
+| **Etiqueta de estado** | "¿Qué está pasando?" | Una línea centrada, con el contexto de la corrida |
+
+**Por qué dos y no una.** Con una sola barra que solo avanza al completarse archivos, comprimir un único vídeo de 1,9 GB deja la pantalla inmóvil en 0% durante varios minutos, y la aplicación parece colgada. Fue un fallo real reportado en uso. La barra individual demuestra que el trabajo avanza; la general responde cuánto queda.
+
+La barra del lote **no salta de golpe** al terminar cada archivo: suma la fracción del archivo en curso a los ya completados, así que avanza de forma continua.
+
+**La línea de estado no repite lo que dicen las barras.** Nombrar ahí el archivo actual lo desincroniza — cuando uno termina, la barra ya muestra el siguiente. Durante la corrida conserva el aviso puesto al arrancar (por ejemplo, que comprimir puede tardar).
 
 Textos de la etiqueta según el momento:
 
@@ -169,7 +179,8 @@ Textos de la etiqueta según el momento:
 | Al abrir sin FFmpeg | `Aviso: FFmpeg no disponible, los videos no se podran procesar.` |
 | Tras agregar | `3 archivo(s) agregados.` o `3 agregados. 2 ya estaban en la cola.` |
 | Tras quitar | `2 archivo(s) quitados de la cola.` |
-| Durante el proceso | `Procesando 2 de 7: foto.jpg` |
+| Al arrancar sin comprimir | `Procesando...` |
+| Al arrancar comprimiendo | `Comprimiendo: esto puede tardar varios minutos por video.` |
 | Al terminar | `Listo: 6 limpiados, 1 omitido.` |
 | Tras un fallo global | `El procesamiento se interrumpio.` |
 
@@ -224,8 +235,9 @@ Igual que B, pero:
 | Casillas de las filas | **Desactivadas** |
 | Barra de acciones | Agregar, Destino y Vaciar **desactivados** |
 | Barra de selección | "Marcar todos" y "Quitar" **desactivados** |
-| Barra de progreso | Avanza |
-| Etiqueta de estado | `Procesando N de M: nombre.jpg` |
+| Barra del archivo | Avanza dentro del archivo en curso |
+| Barra del lote | Avanza de forma continua |
+| Etiqueta de estado | El aviso puesto al arrancar la corrida |
 | Botón verde | **Desactivado**, texto `Procesando...` |
 
 Tres reglas irrenunciables en este estado:

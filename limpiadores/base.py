@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Optional
 
 
 @dataclass(frozen=True)
@@ -28,10 +29,16 @@ class LimpiadorBase(ABC):
         ruta_entrada: Path,
         ruta_salida: Path,
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
+        al_progresar: Optional[Callable[[float], None]] = None,
     ) -> bool:
         """
         Lee el archivo de entrada, procesa el contenido sin metadatos
         y lo guarda en la ruta de salida.
+
+        `al_progresar` recibe la fraccion completada, de 0 a 1, tantas veces
+        como el limpiador pueda informar. Es opcional: un limpiador que trabaja
+        en un solo paso puede no llamarlo nunca, y el procesador dara el archivo
+        por completo al terminar.
         """
 
     @abstractmethod

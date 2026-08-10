@@ -184,23 +184,68 @@ class BarraCompresion(ctk.CTkFrame):
 
 
 class PanelProgreso(ctk.CTkFrame):
-    """Zona 5: barra de progreso y linea de estado."""
+    """
+    Zona 5: dos barras de progreso y una linea de estado.
+
+    Son dos porque responden a preguntas distintas, y con una sola no se puede
+    contestar ninguna bien:
+
+      - La de arriba, el archivo en curso. Sin ella, comprimir un video de
+        varios GB deja la pantalla inmovil durante minutos y la aplicacion
+        parece colgada.
+      - La de abajo, el lote completo. Avanza de forma continua, sumando la
+        fraccion del archivo actual a los ya terminados, en vez de saltar de
+        golpe cada vez que uno acaba.
+    """
 
     def __init__(self, maestro):
         super().__init__(maestro, fg_color="transparent")
 
-        self.barra = ctk.CTkProgressBar(self)
-        self.barra.set(0)
-        self.barra.pack(fill="x", padx=0, pady=5)
+        self.etiqueta_archivo = ctk.CTkLabel(
+            self, text="", anchor="w", text_color=COLOR_TEXTO_SECUNDARIO,
+            font=ctk.CTkFont(size=12),
+        )
+        self.etiqueta_archivo.pack(fill="x", padx=2)
+
+        self.barra_archivo = ctk.CTkProgressBar(self, height=8)
+        self.barra_archivo.set(0)
+        self.barra_archivo.pack(fill="x", pady=(2, 8))
+
+        self.etiqueta_lote = ctk.CTkLabel(
+            self, text="", anchor="w", text_color=COLOR_TEXTO_SECUNDARIO,
+            font=ctk.CTkFont(size=12),
+        )
+        self.etiqueta_lote.pack(fill="x", padx=2)
+
+        self.barra_lote = ctk.CTkProgressBar(self, height=14)
+        self.barra_lote.set(0)
+        self.barra_lote.pack(fill="x", pady=(2, 4))
 
         self.etiqueta = ctk.CTkLabel(self, text="Agrega archivos para empezar.")
-        self.etiqueta.pack(pady=5)
+        self.etiqueta.pack(pady=4)
 
-    def avanzar(self, fraccion: float) -> None:
-        self.barra.set(fraccion)
+    def mostrar_archivo(self, nombre: str, fraccion: float) -> None:
+        """Avance del archivo que se esta procesando ahora mismo."""
+        self.etiqueta_archivo.configure(text=f"{nombre}  —  {fraccion * 100:.0f}%")
+        self.barra_archivo.set(fraccion)
 
-    def reiniciar(self) -> None:
-        self.barra.set(0)
+    def mostrar_lote(self, completados: int, total: int, fraccion: float) -> None:
+        """Avance del lote entero, ya incluida la fraccion del archivo actual."""
+        self.etiqueta_lote.configure(
+            text=f"Progreso general: {completados} de {total}  —  {fraccion * 100:.0f}%"
+        )
+        self.barra_lote.set(fraccion)
+
+    def reiniciar(self, total: int = 0) -> None:
+        """Deja ambas barras a cero al empezar una corrida, o al vaciar la cola."""
+        self.barra_archivo.set(0)
+        self.barra_lote.set(0)
+        if total:
+            self.etiqueta_archivo.configure(text="Preparando...")
+            self.etiqueta_lote.configure(text=f"Progreso general: 0 de {total}  —  0%")
+        else:
+            self.etiqueta_archivo.configure(text="")
+            self.etiqueta_lote.configure(text="")
 
     def informar(self, texto: str) -> None:
         self.etiqueta.configure(text=texto)

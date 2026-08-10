@@ -14,6 +14,7 @@ tiene que acordarse de la restriccion.
 
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Callable, Dict, List
 
@@ -61,17 +62,32 @@ class CoordinadorTrabajo:
         opciones: OpcionesLimpieza,
     ) -> None:
         """
-        Limpia el lote en segundo plano, emitiendo 'avance' por cada archivo y
-        'fin' —o 'error' si algo tumba la corrida entera— al terminar.
+        Limpia el lote en segundo plano, emitiendo:
+
+          'parcial'  avance del archivo en curso, muchas veces por archivo
+          'avance'   un archivo terminado
+          'fin'      la cola completa, o 'error' si algo la tumba entera
         """
 
         def trabajo():
+            ultimo_envio = [0.0]
+
+            def parcial(ruta: Path, fraccion: float):
+                # FFmpeg publica su avance varias veces por segundo. Reenviarlo
+                # todo llenaria la cola de eventos con actualizaciones que el
+                # ojo no distingue, asi que se limita a una cada 100 ms; el 1.0
+                # final siempre pasa, para que la barra cierre exacta.
+                ahora = time.monotonic()
+                if fraccion >= 1.0 or ahora - ultimo_envio[0] >= 0.1:
+                    ultimo_envio[0] = ahora
+                    self.emitir("parcial", (ruta, fraccion))
+
             def progreso(resultado: ResultadoArchivo, actual: int, total: int):
                 self.emitir("avance", (resultado, actual, total))
 
             try:
                 resultados = self._procesador.procesar_archivos(
-                    archivos, carpeta_destino, progreso, opciones
+                    archivos, carpeta_destino, progreso, opciones, parcial
                 )
             except Exception as error:
                 self.emitir("error", str(error))
