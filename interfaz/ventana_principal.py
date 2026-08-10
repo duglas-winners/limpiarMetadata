@@ -19,7 +19,7 @@ import customtkinter as ctk
 from limpiadores.base import OpcionesLimpieza
 from limpiadores.limpiador_video import LimpiadorVideo
 from limpiadores.proveedor import ProveedorLimpiadores
-from nucleo import medios
+from nucleo import preferencias
 from nucleo.procesador import ProcesadorEnLote, ResultadoArchivo
 
 from .barras import BarraAcciones, BarraCompresion, BarraSeleccion, PanelProgreso
@@ -50,12 +50,17 @@ class VentanaPrincipal(ctk.CTk):
         self.geometry("900x700")
         self.minsize(720, 560)
 
-        self.carpeta_destino: Path = Path.home() / "Archivos_Limpiados"
+        # Preferencias de la sesion anterior: la carpeta destino y la densidad
+        # de vista se recuerdan para no tener que reelegirlas en cada arranque.
+        self._preferencias = preferencias.cargar()
+        self.carpeta_destino: Path = preferencias.carpeta_destino_valida(self._preferencias)
+
         self.opciones_en_proceso = OpcionesLimpieza()
         self._completados = 0
         self._total_lote = 0
 
         self._construir_interfaz()
+        self._aplicar_preferencias()
 
         self.coordinador = CoordinadorTrabajo(
             self,
@@ -63,7 +68,6 @@ class VentanaPrincipal(ctk.CTk):
             {
                 "parcial": self._al_avanzar_archivo,
                 "avance": self._al_avanzar,
-                "peso": self._al_llegar_estimacion,
                 "fin": self._finalizar_procesamiento,
                 "error": self._finalizar_con_error,
             },
@@ -131,7 +135,9 @@ class VentanaPrincipal(ctk.CTk):
     # --------------------------------------------------------- Acciones UI --
 
     def _cambiar_vista(self, valor: str):
-        self.vista_cola.establecer_modo("lista" if valor == "Lista" else "detalle")
+        modo = "lista" if valor == "Lista" else "detalle"
+        self.vista_cola.establecer_modo(modo)
+        self._recordar("modo_vista", modo)
 
     def _al_cambiar_seleccion(self, marcadas: int):
         """La cola cambio: refresca las barras que dependen de su contenido."""
@@ -168,10 +174,40 @@ class VentanaPrincipal(ctk.CTk):
             self.progreso.informar("Esos archivos ya estaban en la cola.")
 
     def _elegir_destino(self):
-        carpeta = filedialog.askdirectory(title="Seleccionar carpeta para guardar resultados")
-        if carpeta:
-            self.carpeta_destino = Path(carpeta)
-            self.etiqueta_destino.configure(text=f"Destino: {self.carpeta_destino}")
+        """
+        Cambia la carpeta destino y la recuerda para las proximas sesiones.
+
+        El dialogo se abre en la carpeta actual, que tras la primera vez es la
+        que el usuario eligio: normalmente querra una vecina, no empezar de
+        nuevo desde su carpeta personal.
+        """
+        carpeta = filedialog.askdirectory(
+            title="Seleccionar carpeta para guardar resultados",
+            initialdir=str(self.carpeta_destino) if self.carpeta_destino.is_dir() else None,
+        )
+        if not carpeta:
+            return
+
+        self.carpeta_destino = Path(carpeta)
+        self.etiqueta_destino.configure(text=f"Destino: {self.carpeta_destino}")
+        self._recordar("carpeta_destino", str(self.carpeta_destino))
+
+    # ---------------------------------------------------------- Preferencias --
+
+    def _aplicar_preferencias(self):
+        """Deja la ventana como quedo en la sesion anterior."""
+        modo = self._preferencias.get("modo_vista", "lista")
+        if modo == "detalle":
+            self.barra_acciones.selector_vista.set("Detalle")
+            self.vista_cola.establecer_modo("detalle")
+
+    def _recordar(self, clave: str, valor):
+        """
+        Guarda una preferencia. Si el disco no deja escribir, la sesion actual
+        funciona igual: solo se pierde el recuerdo para la proxima.
+        """
+        self._preferencias[clave] = valor
+        preferencias.guardar(self._preferencias)
 
     def _marcar_todos(self, marcar: bool):
         self.vista_cola.marcar_todas(marcar)
@@ -186,42 +222,26 @@ class VentanaPrincipal(ctk.CTk):
         self.progreso.reiniciar()
         self.progreso.informar("Agrega archivos para empezar.")
 
+    def destroy(self):
+        """Detiene los bombeos periodicos antes de cerrar.
+
+        Sin esto, Tk intenta ejecutar los `after` ya programados sobre un
+        interprete que ya no existe y escupe «invalid command name».
+        """
+        self.coordinador.detener()
+        self.vista_cola.detener()
+        super().destroy()
+
     # ------------------------------------------------------ Peso y compresion --
 
     def _actualizar_peso(self):
         """
-        Refresca la etiqueta de peso. Con la compresion marcada, delega el
-        calculo del techo al coordinador, que lo hace en segundo plano.
+        La casilla de compresion cambio, o la cola. Cada fila muestra su propio
+        peso y calcula su estimacion por su cuenta; aqui solo se le comunica si
+        la compresion esta activa y se refresca la nota.
         """
-        total = self.vista_cola.peso_total
-        texto_total = medios.formatear_peso(total)
-        hay_videos = self.vista_cola.tiene_videos
-
-        self.barra_compresion.mostrar_nota(hay_videos)
-
-        if not self.barra_compresion.activada or not hay_videos:
-            self.coordinador.invalidar_estimacion()
-            self.barra_compresion.mostrar_peso(texto_total)
-            return
-
-        self.barra_compresion.mostrar_peso(texto_total, "calculando...")
-        self.coordinador.estimar_peso(self.vista_cola.rutas, total)
-
-    def _al_llegar_estimacion(self, carga):
-        """Pinta la estimacion, si sigue correspondiendo a la cola actual."""
-        peticion, total, estimado = carga
-        if not self.coordinador.estimacion_vigente(peticion):
-            return
-        if not self.barra_compresion.activada:
-            return
-
-        ahorro = 100 * (total - estimado) / total if total else 0
-        # Se anuncia como maximo, no como cifra exacta: el calculo es un techo
-        # y el archivo real sale igual o mas pequeño, nunca mayor.
-        self.barra_compresion.mostrar_peso(
-            medios.formatear_peso(total),
-            f"maximo {medios.formatear_peso(estimado)}  ({ahorro:.0f}% menos)",
-        )
+        self.barra_compresion.mostrar_nota(self.vista_cola.tiene_videos)
+        self.vista_cola.establecer_compresion(self.barra_compresion.activada)
 
     # ----------------------------------------------------------- Proceso --
 

@@ -60,7 +60,10 @@ Contrato base para cualquier algoritmo que elimine metadatos. Es una clase abstr
 
 | Método | Firma | Qué hace |
 |---|---|---|
-| `limpiar` | `(ruta_entrada, ruta_salida, opciones) -> bool` | Lee el archivo de entrada, genera una copia sin metadatos y la escribe en la ruta de salida. Devuelve `True` si terminó bien. **Nunca lanza excepción**: captura el error, lo imprime y devuelve `False`, para que un archivo corrupto no tumbe el lote completo. |
+| `limpiar` | `(ruta_entrada, ruta_salida, opciones, al_progresar) -> bool` | Lee el archivo de entrada, genera una copia sin metadatos y la escribe en la ruta de salida. Devuelve `True` si terminó bien. **Nunca lanza excepción**: captura el error, lo imprime y devuelve `False`, para que un archivo corrupto no tumbe el lote completo. |
+| `esta_disponible` | `() -> tuple[bool, str]` | Indica si las dependencias externas del limpiador están presentes. Devuelve `(True, "")` si puede trabajar, o `(False, motivo)` con un mensaje legible para el usuario. Permite avisar "falta FFmpeg" antes de intentar procesar, en vez de fallar archivo por archivo. |
+
+`al_progresar` recibe la fracción completada, de 0 a 1, tantas veces como el limpiador pueda informar. Es opcional: uno que trabaja en un solo paso —como el de imágenes— puede no llamarlo nunca, y el procesador da el archivo por completo al terminar.
 
 #### Dataclass `OpcionesLimpieza`
 Ajustes que el usuario elige en la interfaz y que afectan a cómo se procesa cada archivo. Se pasan a **todos** los limpiadores; cada uno atiende los que le conciernen e ignora el resto — `LimpiadorImagen` ignora `comprimir_video`.
@@ -70,7 +73,6 @@ Ajustes que el usuario elige en la interfaz y que afectan a cómo se procesa cad
 | `comprimir_video` | `False` | Recodifica el vídeo a bitrate objetivo en lugar de remuxear |
 
 Existe para que añadir un ajuste nuevo no obligue a cambiar la firma del contrato ni la del procesador.
-| `esta_disponible` | `() -> tuple[bool, str]` | Indica si las dependencias externas del limpiador están presentes. Devuelve `(True, "")` si puede trabajar, o `(False, motivo)` con un mensaje legible para el usuario. Permite avisar "falta FFmpeg" antes de intentar procesar, en vez de fallar archivo por archivo. |
 
 ---
 
@@ -207,6 +209,33 @@ Genera las vistas previas de la vista de detalle. Vive en `nucleo/` y no en `int
 | `_desde_imagen` | `(ruta, lado) -> Image` | Abre con Pillow y encaja. |
 | `_desde_video` | `(ruta, lado) -> Image \| None` | Extrae un fotograma con FFmpeg volcándolo a PNG por `stdout`, sin archivo temporal. Busca en el **segundo 1** para evitar los fundidos en negro que abren muchos vídeos, y reintenta desde el inicio si el clip es más corto. |
 | `limpiar_cache` | `() -> None` | Libera las miniaturas guardadas. Se llama al vaciar la cola. |
+
+### 3.3 `nucleo/preferencias.py`
+
+Ajustes que sobreviven al cierre de la aplicación. Se guardan en un JSON dentro de la carpeta que cada sistema destina a configuración:
+
+| Sistema | Ruta |
+|---|---|
+| Windows | `%APPDATA%\LimpiadorMetadatos\preferencias.json` |
+| macOS | `~/Library/Application Support/LimpiadorMetadatos/preferencias.json` |
+| Linux | `~/.config/LimpiadorMetadatos/preferencias.json` |
+
+**No se guardan junto al ejecutable** a propósito: en Windows suele estar en una ruta sin permiso de escritura, y en macOS dentro del propio paquete `.app`, que no debe modificarse.
+
+| Función | Qué hace |
+|---|---|
+| `carpeta_configuracion` | Resuelve la carpeta correcta según la plataforma |
+| `cargar` | Lee lo guardado, completado con los valores por defecto. Un archivo ausente o ilegible significa primera ejecución, no error. **Solo acepta claves conocidas**, para que un archivo escrito por una versión posterior no inyecte ajustes que esta no entiende |
+| `guardar` | Escribe primero en un `.tmp` y luego lo reemplaza, de modo que un corte a mitad de la escritura no deje el JSON ilegible |
+| `carpeta_destino_valida` | Devuelve la carpeta guardada, o la de por defecto si ya no existe |
+
+**Ninguna operación puede tumbar la aplicación.** Permisos, disco lleno, JSON corrupto: todo se traga y se sigue con los valores por defecto. Perder una preferencia es un inconveniente; no arrancar es un fallo.
+
+`carpeta_destino_valida` existe por un caso concreto: la carpeta pudo desaparecer entre dos sesiones —un disco externo desconectado, una unidad de red caída, una carpeta borrada—. Sin la comprobación, la aplicación arrancaría apuntando a una ruta muerta y fallaría al procesar.
+
+**Qué se recuerda y qué no:** la carpeta destino y la densidad de vista. **La casilla de compresión no**, deliberadamente: recodifica con pérdida de calidad, y debe ser una decisión consciente en cada sesión, no algo heredado que el usuario descubra cuando ya ha procesado.
+
+---
 
 ---
 

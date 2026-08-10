@@ -99,6 +99,14 @@ Tres decisiones deliberadas:
 2. **El recuento va en el propio botón.** "Quitar de la cola (3)" confirma cuántos se van antes de pulsar, sin necesidad de un diálogo.
 3. **Quitar de la cola no borra del disco.** Se dice explícitamente en el manual, porque un botón rojo llamado "Quitar" junto a una lista de archivos puede leerse como borrado.
 
+### Zona 3b — Barra de compresión
+
+Una sola casilla, **Comprimir vídeos**, con una nota al lado que explica su coste: *"Recodifica: más lento y con algo de pérdida de calidad. Cada vídeo muestra a cuánto bajaría."*
+
+No lleva ninguna cifra agregada. El peso vive en las filas (ver Zona 4).
+
+Si no hay vídeos en la cola, la nota lo dice —*"(no hay vídeos en la cola)"*— en lugar de dejar la casilla sugiriendo un efecto que no tendría.
+
 ### Zona 4 — Lista de archivos
 
 Marco desplazable con una fila por archivo. Ocupa todo el espacio sobrante al redimensionar. **Ya no es una caja de texto**: son filas reales, porque el usuario tiene que poder interactuar con cada una.
@@ -111,8 +119,19 @@ Tiene **dos densidades del mismo contenido**:
 | Nombre del archivo | ✓ | ✓ |
 | Chip de estado | ✓ | ✓ |
 | Mensaje (si aporta más que el chip) | ✓ | ✓ |
+| **Peso del archivo** | ✓ (derecha) | ✓ (bajo el nombre) |
 | Miniatura 56×56 | — | ✓ |
-| Tamaño · formato · nombre de salida | — | ✓ |
+| Formato · nombre de salida | — | ✓ |
+
+#### El peso va por archivo, no agregado
+
+Una versión anterior mostraba el peso **total** de la cola en la barra superior. Se movió a cada fila porque un total no responde la pregunta que el usuario se hace al mirarlo: *¿cuál de estos archivos es el pesado?* — que es justo lo que hace falta para decidir si comprimir, o cuál quitar de la cola.
+
+Con la compresión marcada, cada vídeo muestra también su techo: `24.4 MB → max. 3.9 MB`. Las imágenes no lo muestran, porque no se comprimen.
+
+En vista **Lista** el peso va a la derecha, antes del chip: mantiene la fila en un solo renglón y deja todos los pesos alineados en columna. En **Detalle** acompaña al formato bajo el nombre.
+
+Mientras se calcula la estimación —requiere analizar el vídeo con FFmpeg— la fila dice `calculando...`, para que el hueco no parezca un dato que falta.
 
 #### Chips de estado
 

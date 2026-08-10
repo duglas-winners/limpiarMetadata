@@ -43,7 +43,8 @@ class CoordinadorTrabajo:
         # la cola cambia mientras se calcula, el resultado ya no corresponde.
         self._peticion_estimacion = 0
 
-        self._widget.after(INTERVALO_EVENTOS_MS, self._consumir)
+        self._activo = True
+        self._tarea_pendiente = self._widget.after(INTERVALO_EVENTOS_MS, self._consumir)
 
     # -------------------------------------------------------------- Tareas --
 
@@ -124,8 +125,23 @@ class CoordinadorTrabajo:
 
     # -------------------------------------------------------------- Bombeo --
 
+    def detener(self) -> None:
+        """
+        Cancela el bombeo pendiente. Se llama al cerrar la ventana: sin esto,
+        Tk intenta ejecutar el `after` ya programado sobre un interprete que
+        ya no existe y escupe «invalid command name» por la consola.
+        """
+        self._activo = False
+        if self._tarea_pendiente is not None:
+            try:
+                self._widget.after_cancel(self._tarea_pendiente)
+            except Exception:
+                pass
+            self._tarea_pendiente = None
+
     def _consumir(self) -> None:
         """Vacia la cola de eventos y se reprograma mientras la ventana exista."""
+        self._tarea_pendiente = None
         try:
             while True:
                 tipo, carga = self._cola.get_nowait()
@@ -135,5 +151,7 @@ class CoordinadorTrabajo:
         except queue.Empty:
             pass
 
-        if self._widget.winfo_exists():
-            self._widget.after(INTERVALO_EVENTOS_MS, self._consumir)
+        if self._activo and self._widget.winfo_exists():
+            self._tarea_pendiente = self._widget.after(
+                INTERVALO_EVENTOS_MS, self._consumir
+            )

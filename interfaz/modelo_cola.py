@@ -24,6 +24,9 @@ class FilaArchivo:
         self.mensaje = ESTADOS["pendiente"]["etiqueta"]
         self.ruta_salida: Optional[Path] = None
         self.marcada = False
+        # Techo de peso tras comprimir. None mientras no se haya calculado:
+        # exige analizar el video con FFmpeg y eso ocurre en segundo plano.
+        self.estimado: Optional[int] = None
 
     def aplicar(self, resultado: ResultadoArchivo) -> None:
         self.estado = resultado.codigo
@@ -36,12 +39,34 @@ class FilaArchivo:
         self.ruta_salida = None
 
     @property
+    def peso(self) -> int:
+        return medios.peso(self.ruta)
+
+    @property
     def tamano_legible(self) -> str:
-        return medios.formatear_peso(medios.peso(self.ruta))
+        return medios.formatear_peso(self.peso)
 
     @property
     def es_video(self) -> bool:
         return medios.es_video(self.ruta)
+
+    def texto_peso(self, comprimiendo: bool) -> str:
+        """
+        Peso de la fila tal y como se muestra.
+
+        Con la compresion activa y una estimacion ya calculada, se añade el
+        techo al que bajaria. Mientras se calcula se avisa, para que el hueco
+        no parezca un dato que falta.
+        """
+        actual = self.tamano_legible
+
+        if not comprimiendo or not self.es_video:
+            return actual
+
+        if self.estimado is None:
+            return f"{actual}  →  calculando..."
+
+        return f"{actual}  →  max. {medios.formatear_peso(self.estimado)}"
 
 
 class ColaArchivos:

@@ -59,6 +59,7 @@ class VistaCola(ctk.CTkFrame):
         self._al_cambiar_seleccion = al_cambiar_seleccion
         self._aviso: Optional[str] = None
         self._bloqueada = False  # durante el procesamiento no se puede editar
+        self._comprimiendo = False
 
         # Widgets que este componente crea y por tanto puede destruir. No se usa
         # `winfo_children()` del marco desplazable: ahi viven tambien el lienzo y
@@ -68,14 +69,19 @@ class VistaCola(ctk.CTkFrame):
         self._widgets_miniatura: Dict[str, ctk.CTkLabel] = {}
         self._imagenes_vivas: List[ctk.CTkImage] = []  # evita que Tk las libere
 
-        self._cola_miniaturas: queue.Queue = queue.Queue()
-        self._generacion = 0  # invalida miniaturas de una cola ya descartada
+        # Una sola cola para todo lo que se calcula en hilos —miniaturas y
+        # estimaciones de peso— y se pinta desde el hilo principal.
+        self._cola_calculos: queue.Queue = queue.Queue()
+        self._generacion = 0  # invalida resultados de una cola ya descartada
+        self._etiquetas_peso: Dict[str, ctk.CTkLabel] = {}
+        self._activa = True
+        self._tarea_pendiente = None
 
         self.contenedor = ctk.CTkScrollableFrame(self, fg_color=COLOR_FONDO_LISTA)
         self.contenedor.pack(fill="both", expand=True)
 
         self._redibujar()
-        self.after(INTERVALO_MINIATURAS_MS, self._consumir_cola)
+        self._tarea_pendiente = self.after(INTERVALO_MINIATURAS_MS, self._consumir_cola)
 
     # ------------------------------------------------------------- Publico --
 
@@ -148,6 +154,16 @@ class VistaCola(ctk.CTkFrame):
         self._bloqueada = bloqueada
         self._redibujar()
 
+    def establecer_compresion(self, activa: bool) -> None:
+        """
+        Indica si la compresion esta marcada, para que cada fila muestre el
+        techo al que bajaria su peso.
+        """
+        if activa == self._comprimiendo:
+            return
+        self._comprimiendo = activa
+        self._redibujar()
+
     # Atajos que la ventana consulta para sus barras
     @property
     def rutas(self) -> List[Path]:
@@ -180,6 +196,7 @@ class VistaCola(ctk.CTkFrame):
         self._widgets_filas.clear()
         self._contenedores.clear()
         self._widgets_miniatura.clear()
+        self._etiquetas_peso.clear()
         self._imagenes_vivas.clear()
 
         if self._aviso:
@@ -225,7 +242,14 @@ class VistaCola(ctk.CTkFrame):
             self._crear_hueco_miniatura(contenedor, fila)
 
         self._crear_chip_estado(contenedor, fila)
+
+        # El peso va a la derecha, antes del chip: en vista Lista mantiene la
+        # fila en un solo renglon y deja todos los pesos alineados en columna.
+        if not detalle:
+            self._crear_etiqueta_peso(contenedor, fila, side="right")
+
         self._crear_textos(contenedor, fila, detalle)
+        self._pedir_estimacion(fila)
 
     def _crear_hueco_miniatura(self, contenedor, fila: FilaArchivo) -> None:
         etiqueta = ctk.CTkLabel(
@@ -259,11 +283,7 @@ class VistaCola(ctk.CTkFrame):
         ).pack(fill="x")
 
         if detalle:
-            linea = f"{fila.tamano_legible}  ·  {fila.ruta.suffix.lstrip('.').upper()}"
-            if fila.ruta_salida:
-                linea += f"  ·  guardado como {fila.ruta_salida.name}"
-            ctk.CTkLabel(textos, text=linea, anchor="w",
-                         text_color=COLOR_TEXTO_TENUE).pack(fill="x")
+            self._crear_etiqueta_peso(textos, fila, side="top")
 
         # El mensaje solo se repite bajo el nombre si aporta mas que el chip
         if fila.mensaje != ESTADOS[fila.estado]["etiqueta"]:
@@ -271,6 +291,30 @@ class VistaCola(ctk.CTkFrame):
                 textos, text=fila.mensaje, anchor="w", wraplength=430,
                 justify="left", text_color=ESTADOS[fila.estado]["texto"],
             ).pack(fill="x")
+
+    def _crear_etiqueta_peso(self, padre, fila: FilaArchivo, side: str) -> None:
+        """
+        Etiqueta con el peso del archivo, y el techo al que bajaria si se
+        comprime. Se guarda su referencia para poder actualizarla cuando
+        llegue la estimacion, sin redibujar la fila entera.
+        """
+        texto = fila.texto_peso(self._comprimiendo)
+        if side == "top":
+            # En vista Detalle acompaña al formato y al nombre de salida
+            texto += f"  ·  {fila.ruta.suffix.lstrip('.').upper()}"
+            if fila.ruta_salida:
+                texto += f"  ·  guardado como {fila.ruta_salida.name}"
+
+        etiqueta = ctk.CTkLabel(
+            padre, text=texto, anchor="w", text_color=COLOR_TEXTO_TENUE,
+            font=ctk.CTkFont(size=11) if side == "right" else None,
+        )
+        if side == "right":
+            etiqueta.pack(side="right", padx=(6, 4))
+        else:
+            etiqueta.pack(fill="x")
+
+        self._etiquetas_peso[str(fila.ruta)] = etiqueta
 
     @staticmethod
     def _color_fila(fila: FilaArchivo):
@@ -303,26 +347,79 @@ class VistaCola(ctk.CTkFrame):
 
         def trabajar():
             imagen = miniaturas.obtener(ruta, LADO_MINIATURA)
-            self._cola_miniaturas.put((ruta, imagen, generacion))
+            self._cola_calculos.put(("miniatura", ruta, imagen, generacion))
+
+        threading.Thread(target=trabajar, daemon=True).start()
+
+    def _pedir_estimacion(self, fila: FilaArchivo) -> None:
+        """
+        Calcula el peso comprimido de un video en segundo plano.
+
+        Solo se pide cuando hace falta: si no se va a comprimir, si no es
+        video, o si ya se calculo antes, no hay nada que hacer. `medios`
+        cachea el analisis, asi que redibujar no repite el trabajo.
+        """
+        if not self._comprimiendo or not fila.es_video or fila.estimado is not None:
+            return
+
+        generacion = self._generacion
+        ruta = fila.ruta
+
+        def trabajar():
+            estimado = medios.estimar_comprimido(ruta)
+            self._cola_calculos.put(("estimacion", ruta, estimado, generacion))
 
         threading.Thread(target=trabajar, daemon=True).start()
 
     def _consumir_cola(self) -> None:
-        """Vacia la cola de miniaturas listas. Se reprograma a si mismo."""
+        """Vacia la cola de calculos terminados. Se reprograma a si mismo."""
         try:
             while True:
-                ruta, imagen, generacion = self._cola_miniaturas.get_nowait()
-                self._colocar_miniatura(ruta, imagen, generacion)
+                tipo, ruta, dato, generacion = self._cola_calculos.get_nowait()
+                # La cola pudo cambiar mientras se calculaba: descartar lo obsoleto
+                if generacion != self._generacion:
+                    continue
+                if tipo == "miniatura":
+                    self._colocar_miniatura(ruta, dato)
+                else:
+                    self._colocar_estimacion(ruta, dato)
         except queue.Empty:
             pass
 
-        if self.winfo_exists():
-            self.after(INTERVALO_MINIATURAS_MS, self._consumir_cola)
+        if self._activa and self.winfo_exists():
+            self._tarea_pendiente = self.after(INTERVALO_MINIATURAS_MS, self._consumir_cola)
 
-    def _colocar_miniatura(self, ruta: Path, imagen, generacion: int) -> None:
-        # La cola pudo cambiar mientras se generaba: descartar lo obsoleto
-        if generacion != self._generacion:
+    def detener(self) -> None:
+        """Cancela el bombeo pendiente al cerrar la ventana."""
+        self._activa = False
+        if self._tarea_pendiente is not None:
+            try:
+                self.after_cancel(self._tarea_pendiente)
+            except Exception:
+                pass
+            self._tarea_pendiente = None
+
+    def _colocar_estimacion(self, ruta: Path, estimado: int) -> None:
+        """Anota el techo calculado y refresca solo la etiqueta de esa fila."""
+        for fila in self.cola:
+            if fila.ruta == ruta:
+                fila.estimado = estimado
+                self._refrescar_peso(fila)
+                return
+
+    def _refrescar_peso(self, fila: FilaArchivo) -> None:
+        etiqueta = self._etiquetas_peso.get(str(fila.ruta))
+        if etiqueta is None or not etiqueta.winfo_exists():
             return
+
+        texto = fila.texto_peso(self._comprimiendo)
+        if self.modo == "detalle":
+            texto += f"  ·  {fila.ruta.suffix.lstrip('.').upper()}"
+            if fila.ruta_salida:
+                texto += f"  ·  guardado como {fila.ruta_salida.name}"
+        etiqueta.configure(text=texto)
+
+    def _colocar_miniatura(self, ruta: Path, imagen) -> None:
 
         etiqueta = self._widgets_miniatura.get(str(ruta))
         if etiqueta is None or not etiqueta.winfo_exists():

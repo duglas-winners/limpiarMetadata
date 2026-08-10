@@ -132,11 +132,11 @@ class BarraSeleccion(ctk.CTkFrame):
 
 class BarraCompresion(ctk.CTkFrame):
     """
-    Zona 3b: casilla de compresion y peso de la cola.
+    Zona 3b: casilla de compresion.
 
-    Muestra siempre el peso total y, con la compresion marcada, el techo al que
-    bajaria. Se anuncia como maximo y no como cifra exacta porque la estimacion
-    es un techo: el archivo real sale igual o mas pequeño, nunca mayor.
+    El peso ya no se muestra aqui agregado, sino en cada fila de la lista: un
+    total no dice cual de los archivos ocupa lo que ocupa, que es justo lo que
+    hace falta para decidir si comprimir o cual quitar de la cola.
     """
 
     def __init__(self, maestro, al_cambiar: Callable[[], None]):
@@ -153,12 +153,6 @@ class BarraCompresion(ctk.CTkFrame):
         )
         self.etiqueta_nota.pack(side="left")
 
-        self.etiqueta_peso = ctk.CTkLabel(
-            self, text="Peso total: 0 B", anchor="e",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        )
-        self.etiqueta_peso.pack(side="right", padx=10)
-
     @property
     def activada(self) -> bool:
         return bool(self.comprimir.get())
@@ -168,16 +162,11 @@ class BarraCompresion(ctk.CTkFrame):
             self.etiqueta_nota.configure(text="")
         elif hay_videos:
             self.etiqueta_nota.configure(
-                text="Recodifica: mas lento y con algo de perdida de calidad."
+                text="Recodifica: mas lento y con algo de perdida de calidad. "
+                     "Cada video muestra a cuanto bajaria."
             )
         else:
             self.etiqueta_nota.configure(text="(no hay videos en la cola)")
-
-    def mostrar_peso(self, texto_total: str, sufijo: Optional[str] = None) -> None:
-        texto = f"Peso total: {texto_total}"
-        if sufijo:
-            texto += f"  →  {sufijo}"
-        self.etiqueta_peso.configure(text=texto)
 
     def bloquear(self, bloquear: bool) -> None:
         self.comprimir.configure(state="disabled" if bloquear else "normal")

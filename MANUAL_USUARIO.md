@@ -72,7 +72,9 @@ Arriba a la derecha hay un conmutador con dos vistas. Puedes cambiar entre ellas
 | **Lista** | Una línea por archivo | Lotes grandes, cuando solo quieres ver el avance |
 | **Detalle** | Miniatura de cada archivo, tamaño, formato y resultado | Cuando quieres confirmar visualmente qué estás procesando |
 
-En la vista **Detalle** verás una vista previa de cada imagen y, en los vídeos, un fotograma del primer segundo. Las miniaturas se generan en segundo plano: aparecen solas en un par de segundos, y la aplicación sigue respondiendo con normalidad mientras tanto.
+**Ambas vistas muestran el peso de cada archivo.** Con la compresión marcada, cada vídeo indica además a cuánto bajaría: `24.4 MB → max. 3.9 MB`. Así ves de un vistazo cuál es el archivo pesado del lote, que es lo que necesitas para decidir si comprimir o cuál quitar.
+
+En la vista **Detalle** verás además una vista previa de cada imagen y, en los vídeos, un fotograma del primer segundo. Las miniaturas se generan en segundo plano: aparecen solas en un par de segundos, y la aplicación sigue respondiendo con normalidad mientras tanto.
 
 Si un archivo no se puede previsualizar (está dañado, o es un formato que no admite vista previa), su recuadro dirá "sin vista". Eso **no** impide procesarlo.
 
@@ -80,7 +82,11 @@ Si un archivo no se puede previsualizar (está dañado, o es un formato que no a
 
 Pulsa **Carpeta destino** y elige una carpeta. La ruta actual siempre se muestra bajo los botones.
 
-Si no eliges nada, se usa `C:\Users\TuUsuario\Archivos_Limpiados`, que se crea sola la primera vez.
+**Solo tienes que hacerlo una vez.** La aplicación recuerda la carpeta que elijas y la vuelve a usar la próxima vez que la abras. También recuerda si dejaste la vista en Lista o en Detalle.
+
+Si nunca has elegido ninguna, se usa `C:\Users\TuUsuario\Archivos_Limpiados`, que se crea sola la primera vez.
+
+> Si la carpeta que recordaba ya no existe —un disco externo desconectado, una carpeta borrada—, la aplicación vuelve sola a la de por defecto en lugar de fallar.
 
 > **Importante:** debe ser una carpeta **distinta** de donde están tus originales. Como las copias limpias conservan el nombre original, guardarlas en la misma carpeta sobrescribiría los archivos de partida. La aplicación lo detecta y no te dejará hacerlo.
 
