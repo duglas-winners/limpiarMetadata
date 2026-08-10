@@ -58,10 +58,15 @@ limpiarMetadata/
 │   └── proveedor.py          # Resuelve el limpiador según la extensión
 ├── nucleo/
 │   ├── procesador.py         # Cola en paralelo con grupo de hilos
-│   └── miniaturas.py         # Vistas previas de imagen y vídeo, con caché
+│   ├── miniaturas.py         # Vistas previas de imagen y vídeo, con caché
+│   └── medios.py             # Peso, análisis de vídeo y estimación al comprimir
 ├── interfaz/
-│   ├── ventana_principal.py  # Ventana única (CustomTkinter)
-│   └── vista_cola.py         # Visor de la cola: vista lista y vista detalle
+│   ├── ventana_principal.py  # Ensambla los componentes y coordina entre ellos
+│   ├── vista_cola.py         # Dibuja la lista de archivos
+│   ├── modelo_cola.py        # Estado de la cola (sin Tkinter)
+│   ├── barras.py             # Las cuatro barras de control
+│   ├── coordinador.py        # Puente entre hilos de trabajo e interfaz
+│   └── estilos.py            # Colores, símbolos de estado e intervalos
 ├── empaquetado/              # Todo lo relativo a generar los ejecutables
 │   ├── obtener_ffmpeg.py     # Descarga FFmpeg para incrustarlo
 │   ├── limpiador.spec        # Especificación de PyInstaller (Windows y Mac)

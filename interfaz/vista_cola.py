@@ -1,5 +1,5 @@
 """
-Visor de la cola de archivos.
+Visor de la cola: dibuja `ColaArchivos` y gestiona la interaccion con las filas.
 
 Es una lista de filas reales —no texto— en la que cada archivo se puede marcar
 y quitar antes de procesar. Dos densidades intercambiables:
@@ -7,8 +7,8 @@ y quitar antes de procesar. Dos densidades intercambiables:
   - Lista:   fila compacta. Util para lotes grandes.
   - Detalle: la misma fila mas una miniatura y los datos del archivo.
 
-El estado vive en `FilaArchivo`, de modo que alternar de vista o quitar
-elementos no pierde ningun resultado.
+Este modulo solo se ocupa de pintar y de recibir clics; el estado vive en
+`modelo_cola`, y las operaciones sobre el se delegan alli.
 
 Regla de hilos: Tkinter solo tolera llamadas desde el hilo principal, y eso
 incluye `after()`, que registra un comando en el interprete Tcl. Los hilos que
@@ -26,73 +26,22 @@ import customtkinter as ctk
 from nucleo import medios, miniaturas
 from nucleo.procesador import ResultadoArchivo
 
-LADO_MINIATURA = 56
-INTERVALO_COLA_MS = 100
+from .estilos import (
+    COLOR_FILA_MARCADA,
+    COLOR_FILA_NORMAL,
+    COLOR_FONDO_LISTA,
+    COLOR_HUECO_MINIATURA,
+    COLOR_TEXTO_TENUE,
+    ESTADOS,
+    INTERVALO_MINIATURAS_MS,
+    LADO_MINIATURA,
+)
+from .modelo_cola import ColaArchivos, FilaArchivo
 
-COLOR_FILA_NORMAL = ("gray86", "gray20")
-COLOR_FILA_MARCADA = ("#cfe0f5", "#1d3550")  # azul tenue: "esto se va a quitar"
-
-# Cada estado tiene simbolo, texto por defecto y color. Se muestran como una
-# etiqueta con fondo propio, no como marcas de texto entre corchetes: el color
-# se lee de un vistazo y el simbolo funciona aunque el usuario no distinga bien
-# los colores.
-ESTADOS = {
-    "pendiente": {
-        "simbolo": "•",
-        "etiqueta": "En cola",
-        "texto": ("gray30", "gray75"),
-        "fondo": ("gray80", "gray28"),
-    },
-    "procesando": {
-        "simbolo": "◐",
-        "etiqueta": "Procesando",
-        "texto": ("#0b4f9e", "#7cc4ff"),
-        "fondo": ("#cfe4ff", "#16324f"),
-    },
-    "limpiado": {
-        "simbolo": "✓",
-        "etiqueta": "Limpiado",
-        "texto": ("#0f5323", "#7ee787"),
-        "fondo": ("#c7f0d2", "#123d1e"),
-    },
-    "omitido": {
-        "simbolo": "!",
-        "etiqueta": "Omitido",
-        "texto": ("#7a4b00", "#f0c674"),
-        "fondo": ("#ffe6b8", "#43310d"),
-    },
-    "error": {
-        "simbolo": "✕",
-        "etiqueta": "Error",
-        "texto": ("#8c1d18", "#ffa198"),
-        "fondo": ("#ffd6d2", "#4a1512"),
-    },
-}
-
-
-class FilaArchivo:
-    """Estado de un archivo en la cola, independiente de como se dibuje."""
-
-    def __init__(self, ruta: Path):
-        self.ruta = ruta
-        self.estado = "pendiente"
-        self.mensaje = ESTADOS["pendiente"]["etiqueta"]
-        self.ruta_salida: Optional[Path] = None
-        self.marcada = False
-
-    def aplicar(self, resultado: ResultadoArchivo) -> None:
-        self.estado = resultado.codigo
-        self.mensaje = resultado.mensaje
-        self.ruta_salida = resultado.ruta_salida
-
-    def reiniciar(self) -> None:
-        self.estado = "pendiente"
-        self.mensaje = ESTADOS["pendiente"]["etiqueta"]
-        self.ruta_salida = None
-
-    @property
-    def tamano_legible(self) -> str:
-        return medios.formatear_peso(medios.peso(self.ruta))
+MENSAJE_VACIO = (
+    "No hay archivos en la cola.\n\n"
+    "Pulsa «Agregar archivos» para elegir imagenes o videos."
+)
 
 
 class VistaCola(ctk.CTkFrame):
@@ -105,7 +54,7 @@ class VistaCola(ctk.CTkFrame):
     def __init__(self, maestro, al_cambiar_seleccion: Optional[Callable[[int], None]] = None):
         super().__init__(maestro, fg_color="transparent")
 
-        self.filas: List[FilaArchivo] = []
+        self.cola = ColaArchivos()
         self.modo = "lista"
         self._al_cambiar_seleccion = al_cambiar_seleccion
         self._aviso: Optional[str] = None
@@ -122,84 +71,72 @@ class VistaCola(ctk.CTkFrame):
         self._cola_miniaturas: queue.Queue = queue.Queue()
         self._generacion = 0  # invalida miniaturas de una cola ya descartada
 
-        self.contenedor = ctk.CTkScrollableFrame(self, fg_color=("gray94", "gray14"))
+        self.contenedor = ctk.CTkScrollableFrame(self, fg_color=COLOR_FONDO_LISTA)
         self.contenedor.pack(fill="both", expand=True)
 
-        self.after(INTERVALO_COLA_MS, self._consumir_cola)
+        self._redibujar()
+        self.after(INTERVALO_MINIATURAS_MS, self._consumir_cola)
 
     # ------------------------------------------------------------- Publico --
 
+    @property
+    def filas(self) -> List[FilaArchivo]:
+        """Acceso directo a las filas, para consultas desde la ventana."""
+        return self.cola.filas
+
     def establecer_modo(self, modo: str) -> None:
         """Alterna entre 'lista' y 'detalle' conservando el estado de la cola."""
-        if modo == self.modo:
-            return
-        self.modo = modo
-        self._redibujar()
+        if modo != self.modo:
+            self.modo = modo
+            self._redibujar()
 
     def cargar(self, rutas: List[Path]) -> None:
         """Sustituye la cola por una lista nueva de archivos pendientes."""
         self._generacion += 1
         self._aviso = None
-        self.filas = [FilaArchivo(r) for r in rutas]
-        self._redibujar()
-        self._notificar_seleccion()
+        self.cola.reemplazar(rutas)
+        self._refrescar()
 
     def agregar(self, rutas: List[Path]) -> int:
         """
-        Añade archivos a la cola sin descartar los que ya estaban, ignorando
-        los repetidos. Devuelve cuantos se añadieron realmente.
+        Añade archivos sin descartar los que ya estaban, ignorando repetidos.
+        Devuelve cuantos se añadieron realmente.
         """
-        existentes = {f.ruta for f in self.filas}
-        nuevas = [r for r in rutas if r not in existentes]
-        if not nuevas:
-            return 0
-
-        self._aviso = None
-        self.filas.extend(FilaArchivo(r) for r in nuevas)
-        self._redibujar()
-        self._notificar_seleccion()
-        return len(nuevas)
+        añadidos = self.cola.agregar(rutas)
+        if añadidos:
+            self._aviso = None
+            self._refrescar()
+        return añadidos
 
     def vaciar(self, aviso: Optional[str] = None) -> None:
         """Descarta la cola. Con `aviso`, lo muestra en lugar de las filas."""
         self._generacion += 1
-        self.filas = []
+        self.cola.vaciar()
         self._aviso = aviso
         miniaturas.limpiar_cache()
         medios.limpiar_cache()
-        self._redibujar()
-        self._notificar_seleccion()
+        self._refrescar()
 
     def quitar_marcados(self) -> int:
         """Elimina de la cola las filas marcadas. Devuelve cuantas quito."""
-        quitadas = [f for f in self.filas if f.marcada]
-        if not quitadas:
-            return 0
-
-        self.filas = [f for f in self.filas if not f.marcada]
-        self._redibujar()
-        self._notificar_seleccion()
-        return len(quitadas)
+        quitadas = self.cola.quitar_marcadas()
+        if quitadas:
+            self._refrescar()
+        return quitadas
 
     def marcar_todas(self, marcar: bool) -> None:
         """Marca o desmarca todas las filas de golpe."""
-        for fila in self.filas:
-            fila.marcada = marcar
-        self._redibujar()
-        self._notificar_seleccion()
+        self.cola.marcar_todas(marcar)
+        self._refrescar()
 
     def reiniciar_estados(self) -> None:
         """Devuelve todas las filas a 'pendiente' antes de una corrida nueva."""
-        for fila in self.filas:
-            fila.reiniciar()
+        self.cola.reiniciar_estados()
         self._redibujar()
 
     def actualizar_resultado(self, resultado: ResultadoArchivo) -> None:
         """Aplica el desenlace de un archivo y refresca la vista."""
-        for fila in self.filas:
-            if fila.ruta == resultado.ruta_origen:
-                fila.aplicar(resultado)
-                break
+        self.cola.aplicar_resultado(resultado)
         self._redibujar()
 
     def bloquear(self, bloqueada: bool) -> None:
@@ -211,29 +148,30 @@ class VistaCola(ctk.CTkFrame):
         self._bloqueada = bloqueada
         self._redibujar()
 
+    # Atajos que la ventana consulta para sus barras
     @property
     def rutas(self) -> List[Path]:
-        """Archivos actualmente en la cola, en orden."""
-        return [f.ruta for f in self.filas]
+        return self.cola.rutas
 
     @property
     def total_marcadas(self) -> int:
-        return sum(1 for f in self.filas if f.marcada)
+        return self.cola.total_marcadas
 
     @property
     def peso_total(self) -> int:
-        """Suma en bytes de todos los archivos de la cola."""
-        return sum(medios.peso(f.ruta) for f in self.filas)
+        return self.cola.peso_total
 
     @property
     def tiene_videos(self) -> bool:
-        return any(medios.es_video(f.ruta) for f in self.filas)
+        return self.cola.tiene_videos
 
     # ------------------------------------------------------------- Dibujado --
 
-    def _notificar_seleccion(self) -> None:
+    def _refrescar(self) -> None:
+        """Redibuja y avisa de que la seleccion pudo cambiar."""
+        self._redibujar()
         if self._al_cambiar_seleccion:
-            self._al_cambiar_seleccion(self.total_marcadas)
+            self._al_cambiar_seleccion(self.cola.total_marcadas)
 
     def _redibujar(self) -> None:
         for widget in self._widgets_filas:
@@ -245,25 +183,24 @@ class VistaCola(ctk.CTkFrame):
         self._imagenes_vivas.clear()
 
         if self._aviso:
-            aviso = ctk.CTkLabel(self.contenedor, text=self._aviso,
-                                 justify="left", anchor="w")
-            aviso.pack(fill="x", padx=12, pady=12)
-            self._widgets_filas.append(aviso)
-            return
+            self._dibujar_mensaje(self._aviso, "left")
+        elif not self.cola.filas:
+            # Una zona vacia sin explicacion se lee como algo que fallo al cargar
+            self._dibujar_mensaje(MENSAJE_VACIO, "center")
+        else:
+            for fila in self.cola:
+                self._crear_fila(fila)
 
-        if not self.filas:
-            vacio = ctk.CTkLabel(
-                self.contenedor,
-                text="No hay archivos en la cola.\n\n"
-                     "Pulsa «Agregar archivos» para elegir imagenes o videos.",
-                justify="center", text_color=("gray45", "gray60"),
-            )
-            vacio.pack(expand=True, pady=40)
-            self._widgets_filas.append(vacio)
-            return
-
-        for fila in self.filas:
-            self._crear_fila(fila)
+    def _dibujar_mensaje(self, texto: str, alineacion: str) -> None:
+        etiqueta = ctk.CTkLabel(
+            self.contenedor, text=texto, justify=alineacion,
+            text_color=COLOR_TEXTO_TENUE if alineacion == "center" else None,
+        )
+        if alineacion == "center":
+            etiqueta.pack(expand=True, pady=40)
+        else:
+            etiqueta.pack(fill="x", padx=12, pady=12)
+        self._widgets_filas.append(etiqueta)
 
     def _crear_fila(self, fila: FilaArchivo) -> None:
         detalle = self.modo == "detalle"
@@ -285,17 +222,33 @@ class VistaCola(ctk.CTkFrame):
         casilla.pack(side="left", padx=(10, 4), pady=10 if detalle else 6)
 
         if detalle:
-            etiqueta_imagen = ctk.CTkLabel(
-                contenedor, text="", width=LADO_MINIATURA, height=LADO_MINIATURA,
-                fg_color=("gray84", "gray25"), corner_radius=6,
-            )
-            etiqueta_imagen.pack(side="left", padx=6, pady=8)
-            self._widgets_miniatura[str(fila.ruta)] = etiqueta_imagen
-            self._pedir_miniatura(fila.ruta)
+            self._crear_hueco_miniatura(contenedor, fila)
 
-        # Chip de estado, a la derecha y con color propio
         self._crear_chip_estado(contenedor, fila)
+        self._crear_textos(contenedor, fila, detalle)
 
+    def _crear_hueco_miniatura(self, contenedor, fila: FilaArchivo) -> None:
+        etiqueta = ctk.CTkLabel(
+            contenedor, text="", width=LADO_MINIATURA, height=LADO_MINIATURA,
+            fg_color=COLOR_HUECO_MINIATURA, corner_radius=6,
+        )
+        etiqueta.pack(side="left", padx=6, pady=8)
+        self._widgets_miniatura[str(fila.ruta)] = etiqueta
+        self._pedir_miniatura(fila.ruta)
+
+    def _crear_chip_estado(self, contenedor, fila: FilaArchivo) -> None:
+        estilo = ESTADOS[fila.estado]
+        chip = ctk.CTkLabel(
+            contenedor,
+            text=f" {estilo['simbolo']}  {estilo['etiqueta']} ",
+            fg_color=estilo["fondo"],
+            text_color=estilo["texto"],
+            corner_radius=10,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        chip.pack(side="right", padx=10)
+
+    def _crear_textos(self, contenedor, fila: FilaArchivo, detalle: bool) -> None:
         textos = ctk.CTkFrame(contenedor, fg_color="transparent")
         textos.pack(side="left", fill="both", expand=True, padx=(4, 8),
                     pady=6 if detalle else 4)
@@ -310,7 +263,7 @@ class VistaCola(ctk.CTkFrame):
             if fila.ruta_salida:
                 linea += f"  ·  guardado como {fila.ruta_salida.name}"
             ctk.CTkLabel(textos, text=linea, anchor="w",
-                         text_color=("gray40", "gray65")).pack(fill="x")
+                         text_color=COLOR_TEXTO_TENUE).pack(fill="x")
 
         # El mensaje solo se repite bajo el nombre si aporta mas que el chip
         if fila.mensaje != ESTADOS[fila.estado]["etiqueta"]:
@@ -318,18 +271,6 @@ class VistaCola(ctk.CTkFrame):
                 textos, text=fila.mensaje, anchor="w", wraplength=430,
                 justify="left", text_color=ESTADOS[fila.estado]["texto"],
             ).pack(fill="x")
-
-    def _crear_chip_estado(self, contenedor, fila: FilaArchivo) -> None:
-        estilo = ESTADOS[fila.estado]
-        chip = ctk.CTkLabel(
-            contenedor,
-            text=f" {estilo['simbolo']}  {estilo['etiqueta']} ",
-            fg_color=estilo["fondo"],
-            text_color=estilo["texto"],
-            corner_radius=10,
-            font=ctk.CTkFont(size=12, weight="bold"),
-        )
-        chip.pack(side="right", padx=10)
 
     @staticmethod
     def _color_fila(fila: FilaArchivo):
@@ -348,7 +289,8 @@ class VistaCola(ctk.CTkFrame):
         if contenedor is not None and contenedor.winfo_exists():
             contenedor.configure(fg_color=self._color_fila(fila))
 
-        self._notificar_seleccion()
+        if self._al_cambiar_seleccion:
+            self._al_cambiar_seleccion(self.cola.total_marcadas)
 
     # ----------------------------------------------------------- Miniaturas --
 
@@ -375,7 +317,7 @@ class VistaCola(ctk.CTkFrame):
             pass
 
         if self.winfo_exists():
-            self.after(INTERVALO_COLA_MS, self._consumir_cola)
+            self.after(INTERVALO_MINIATURAS_MS, self._consumir_cola)
 
     def _colocar_miniatura(self, ruta: Path, imagen, generacion: int) -> None:
         # La cola pudo cambiar mientras se generaba: descartar lo obsoleto
@@ -388,7 +330,7 @@ class VistaCola(ctk.CTkFrame):
 
         if imagen is None:
             etiqueta.configure(text="sin\nvista", font=ctk.CTkFont(size=10),
-                               text_color=("gray45", "gray60"))
+                               text_color=COLOR_TEXTO_TENUE)
             return
 
         ctk_imagen = ctk.CTkImage(

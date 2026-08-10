@@ -11,10 +11,15 @@ Tres capas independientes, con dependencias en una sola dirección:
 ```
 interfaz/  (CustomTkinter)     ← lo que ve el usuario
     ↓ llama a
-nucleo/    (hilos)             ← orquesta la cola de trabajo
+nucleo/    (hilos, análisis)   ← orquesta la cola y analiza los archivos
     ↓ llama a
 limpiadores/ (Pillow, FFmpeg)  ← hace la limpieza real de un archivo
 ```
+
+La única excepción a esa dirección es `limpiadores/limpiador_video.py`, que
+importa `nucleo.medios` **dentro de la función** que calcula el bitrate. Es una
+importación diferida y deliberada: hacerla arriba crearía un ciclo entre ambos
+paquetes, porque `nucleo.medios` importa a su vez `limpiadores.proveedor`.
 
 - `limpiadores/` no sabe que existe una interfaz gráfica.
 - `nucleo/` no sabe qué formato está limpiando; solo pide un limpiador al proveedor.
@@ -36,8 +41,8 @@ Usuario pulsa "Procesar"
                   → limpiador.limpiar(entrada, salida)
                   → devuelve ResultadoArchivo
               → notificar_progreso(resultado, actual, total)
-                  → cola_eventos.put(...)   el hilo NO toca Tkinter
-  → _consumir_eventos()  cada 80 ms         [hilo principal]
+                  → coordinador.emitir("avance", ...)  el hilo NO toca Tkinter
+  → CoordinadorTrabajo._consumir()  cada 80 ms  [hilo principal]
       → vista_cola.actualizar_resultado(), barra, etiqueta
   → _finalizar_procesamiento(resultados)        [hilo principal]
 ```
@@ -55,7 +60,16 @@ Contrato base para cualquier algoritmo que elimine metadatos. Es una clase abstr
 
 | Método | Firma | Qué hace |
 |---|---|---|
-| `limpiar` | `(ruta_entrada: Path, ruta_salida: Path) -> bool` | Lee el archivo de entrada, genera una copia sin metadatos y la escribe en la ruta de salida. Devuelve `True` si terminó bien. **Nunca lanza excepción**: captura el error, lo imprime y devuelve `False`, para que un archivo corrupto no tumbe el lote completo. |
+| `limpiar` | `(ruta_entrada, ruta_salida, opciones) -> bool` | Lee el archivo de entrada, genera una copia sin metadatos y la escribe en la ruta de salida. Devuelve `True` si terminó bien. **Nunca lanza excepción**: captura el error, lo imprime y devuelve `False`, para que un archivo corrupto no tumbe el lote completo. |
+
+#### Dataclass `OpcionesLimpieza`
+Ajustes que el usuario elige en la interfaz y que afectan a cómo se procesa cada archivo. Se pasan a **todos** los limpiadores; cada uno atiende los que le conciernen e ignora el resto — `LimpiadorImagen` ignora `comprimir_video`.
+
+| Campo | Por defecto | Efecto |
+|---|---|---|
+| `comprimir_video` | `False` | Recodifica el vídeo a bitrate objetivo en lugar de remuxear |
+
+Existe para que añadir un ajuste nuevo no obligue a cambiar la firma del contrato ni la del procesador.
 | `esta_disponible` | `() -> tuple[bool, str]` | Indica si las dependencias externas del limpiador están presentes. Devuelve `(True, "")` si puede trabajar, o `(False, motivo)` con un mensaje legible para el usuario. Permite avisar "falta FFmpeg" antes de intentar procesar, en vez de fallar archivo por archivo. |
 
 ---
@@ -103,7 +117,8 @@ Elimina metadatos globales, por stream y capítulos mediante FFmpeg. Usa **remux
 | `-map 0` | Conserva **todos** los streams: vídeo, audio, subtítulos, pistas alternativas. Sin esto FFmpeg elegiría solo uno de cada tipo y se perderían pistas. |
 | `-map_metadata -1` | Descarta los metadatos del contenedor (título, autor, GPS, dispositivo, fecha de grabación). |
 | `-map_chapters -1` | Descarta los marcadores de capítulo. |
-| `-c copy` | Remux sin recodificar. |
+| `-c copy` | Remux sin recodificar (solo en modo sin comprimir). |
+| `-metadata:s:v:0 encoder=` | Borra la firma que **el codificador** escribe al recodificar (`encoder: Lavc libx264`). `-map_metadata` no la toca, porque no viene del contenedor de entrada. |
 | `-fflags +bitexact` y `-flags:v/-flags:a +bitexact` | Impide que FFmpeg firme el archivo de salida con su propia versión (`encoder: Lavf63.1.100`). En una herramienta de privacidad, ese campo delata que el archivo fue procesado. |
 
 ---
@@ -196,7 +211,63 @@ Genera las vistas previas de la vista de detalle. Vive en `nucleo/` y no en `int
 
 ## 4. Módulo `interfaz/`
 
-### 4.0 `interfaz/vista_cola.py`
+La interfaz está dividida por responsabilidad, no por pantalla: todo vive en una sola ventana, pero cada pieza hace una cosa.
+
+| Archivo | Responsabilidad | Líneas |
+|---|---|---|
+| `estilos.py` | Colores, símbolos de estado e intervalos. Sin lógica | 59 |
+| `modelo_cola.py` | El estado de la cola. **No importa Tkinter** | 111 |
+| `coordinador.py` | Puente entre hilos de trabajo y la interfaz | 123 |
+| `barras.py` | Las cuatro barras de control | 206 |
+| `ventana_principal.py` | Ensambla los componentes y coordina entre ellos | 310 |
+| `vista_cola.py` | Dibuja la cola y gestiona la interacción con las filas | 341 |
+
+**Por qué esta división.** `ventana_principal.py` había llegado a 446 líneas mezclando cinco cosas: construir widgets, manipular la cola, calcular pesos, lanzar hilos y presentar resultados. El criterio del corte fue *qué cambia junto*: retocar colores no debe obligar a leer lógica de hilos, y cambiar cómo se estima el peso no debe tocar el dibujo de una fila.
+
+Dos consecuencias que valen más que el recuento de líneas:
+
+1. **`modelo_cola.py` no importa Tkinter.** El estado de la cola —qué archivos hay, cuáles están marcados, cuánto pesan— se puede probar sin abrir una ventana.
+2. **`coordinador.py` concentra la regla de hilos.** Antes, cada sitio que lanzaba trabajo en segundo plano tenía que acordarse de no tocar Tk. Ahora quien añada una tarea usa `ejecutar` o `emitir` y la restricción se cumple sola.
+
+### 4.0 `interfaz/estilos.py`
+
+Constantes visuales en un solo sitio. Cada color se declara como par `(claro, oscuro)`; CustomTkinter elige según el tema del sistema. Contiene la tabla `ESTADOS`, única fuente de verdad del aspecto de los chips: añadir un estado nuevo es añadir una entrada.
+
+### 4.0b `interfaz/modelo_cola.py`
+
+| Clase | Qué es |
+|---|---|
+| `FilaArchivo` | Estado de un archivo: ruta, estado, mensaje, ruta de salida, si está marcado |
+| `ColaArchivos` | Colección ordenada de filas, con las operaciones que la interfaz necesita: `agregar` (ignora repetidos), `quitar_marcadas`, `marcar_todas`, `reiniciar_estados`, `aplicar_resultado`, y las consultas `rutas`, `total_marcadas`, `peso_total`, `tiene_videos` |
+
+### 4.0c `interfaz/coordinador.py`
+
+#### Clase `CoordinadorTrabajo`
+Lanza tareas en hilos y entrega sus resultados en el hilo principal. Recibe un diccionario `manejadores` que asocia el nombre de cada evento con la función que lo atiende.
+
+| Método | Qué hace |
+|---|---|
+| `ejecutar(funcion)` | Corre algo en un hilo `daemon` |
+| `emitir(tipo, carga)` | Encola un evento para el hilo principal |
+| `procesar_lote(...)` | Limpia el lote emitiendo `avance` por archivo y `fin` o `error` al acabar |
+| `estimar_peso(...)` | Calcula el techo de peso en segundo plano y emite `peso` |
+| `estimacion_vigente(n)` | Si esa estimación sigue correspondiendo a la cola actual |
+| `_consumir` | Vacía la cola cada 80 ms y se reprograma mientras la ventana exista |
+
+### 4.0d `interfaz/barras.py`
+
+Cuatro componentes cerrados. Construyen sus widgets, exponen métodos para consultarlos, y avisan de la interacción mediante callbacks. **No conocen el procesador ni la cola**, solo su trozo de pantalla.
+
+| Clase | Zona | Contenido |
+|---|---|---|
+| `BarraAcciones` | 1 | Agregar, destino, vaciar, conmutador de vista |
+| `BarraSeleccion` | 3 | Marcar todos, quitar los marcados, contador |
+| `BarraCompresion` | 3b | Casilla de comprimir, nota y peso |
+| `PanelProgreso` | 5 | Barra de progreso y línea de estado |
+
+Todas exponen `bloquear(bool)`, que la ventana llama en bloque al empezar y terminar una corrida.
+
+### 4.0e `interfaz/vista_cola.py`
 
 Componente que encapsula el visor de la cola con sus dos presentaciones. Existe como módulo aparte porque la lógica de dos vistas, miniaturas asíncronas y estado por fila desbordaba la ventana principal.
 
