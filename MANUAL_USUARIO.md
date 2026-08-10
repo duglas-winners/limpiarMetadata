@@ -115,12 +115,14 @@ La de arriba existe precisamente para los archivos grandes: comprimir un vídeo 
 
 Al marcar **Comprimir vídeos** aparecen cuatro niveles. Elige según lo pequeño que necesites el archivo:
 
-| Nivel | Resolución | Reducción típica | Cuándo usarlo |
-|---|---|---|---|
-| **Ligera** | La original | ~60% menos | Quieres conservar la calidad al máximo |
-| **Media** | Hasta 1080p | ~78% menos | Equilibrio para la mayoría de casos |
-| **Fuerte** | Baja a 720p | ~84% menos | Enviar por WhatsApp, correo o subir a la nube |
-| **Máxima** | Baja a 480p | ~90% menos | El archivo más pequeño posible |
+| Nivel | Resolución | Vídeo (H.264) | Audio | Reducción típica |
+|---|---|---|---|---|
+| **Ligera** | Sin reescalar | 3000 kbps a 1080p | AAC 128 kbps | ~60% menos |
+| **Media** | Máximo 1080p | 1650 kbps | AAC 128 kbps | ~78% menos |
+| **Fuerte** | Máximo 720p | 1200 kbps | AAC 128 kbps | ~84% menos |
+| **Máxima** | Máximo 480p | 720 kbps | AAC 128 kbps | ~90% menos |
+
+Los bitrates de la tabla son los que resultan de un vídeo **1080p de partida**, que es el caso habitual. Con otra resolución de origen se ajustan proporcionalmente: un 4K en "Ligera" recibe 12000 kbps, un 720p recibe 1500.
 
 **Por qué los niveles fuertes bajan la resolución.** Cuando hay pocos bits disponibles, un 720p limpio se ve claramente mejor que un 1080p lleno de cuadros: el codificador reparte los mismos bits entre menos píxeles, así que cada uno queda mejor definido. Bajar resolución es lo que permite llegar a archivos muy pequeños sin que se vean mal.
 

@@ -223,6 +223,8 @@ Genera las vistas previas de la vista de detalle. Vive en `nucleo/` y no en `int
 
 **Por qué dos palancas y no solo el bitrate.** A bitrates bajos, un 720p limpio se ve claramente mejor que un 1080p lleno de artefactos: el codificador reparte los mismos bits entre menos píxeles. Sin la palanca de resolución, los niveles fuertes producirían archivos pequeños pero feos.
 
+Cada nivel lleva además una `descripcion` que la interfaz muestra tal cual: declara los parámetros de codificación —resolución máxima, códec y bitrate de vídeo, códec y bitrate de audio— y no el uso sugerido. Los bitrates que cita son los de una entrada 1080p; con otra resolución de partida cambian según `BITRATE_POR_ALTURA`.
+
 `bitrate_objetivo` parte del valor de referencia de la altura **resultante**, no de la original — si se va a escalar hacen falta menos bits — y le aplica el factor. `altura_objetivo` nunca agranda: un vídeo 480p se queda en 480p en todos los niveles.
 
 Medido sobre 1080p a 8 Mbps, el resultado real cae entre un 1% y un 5% por debajo del techo estimado en los cuatro niveles.

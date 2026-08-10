@@ -105,7 +105,9 @@ Tres decisiones deliberadas:
 |---|---|---|
 | Casilla **Comprimir vídeos** | Siempre | Activa la recodificación |
 | Selector de nivel | **Solo con la casilla marcada** | Ligera · Media · Fuerte · Máxima |
-| Nota | Solo con la casilla marcada | Describe el nivel elegido |
+| Nota | Solo con la casilla marcada | Parámetros de codificación del nivel elegido |
+
+**La nota declara parámetros, no usos.** Dice *"Máximo 720p · H.264 1200 kbps · AAC 128 kbps"*, no *"ideal para compartir"*. Una recomendación de uso presupone el caso del usuario y no le permite comprobar nada; los parámetros sí le dejan decidir con criterio propio y contrastar el resultado.
 
 **El selector aparece y desaparece con la casilla.** Sin compresión activa no hace nada, y un control inerte invita a manipularlo esperando un efecto que no llega.
 

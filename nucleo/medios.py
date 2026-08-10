@@ -44,26 +44,30 @@ FACTOR_MAXIMO = 0.9
 #
 # `altura_max` None conserva la resolucion original. El escalado solo se aplica
 # si el video es mas alto: nunca se agranda un video pequeño.
+#
+# `descripcion` declara los parametros de codificacion, no el uso sugerido: el
+# bitrate que se muestra es el que resulta de una entrada 1080p, que es el caso
+# habitual. Con otra resolucion de partida cambia segun BITRATE_POR_ALTURA.
 NIVELES = {
     "Ligera": {
         "altura_max": None,
         "factor": 1.0,
-        "descripcion": "Mantiene la resolucion. Reduccion moderada.",
+        "descripcion": "Sin reescalar · H.264 3000 kbps a 1080p · AAC 128 kbps",
     },
     "Media": {
         "altura_max": 1080,
         "factor": 0.55,
-        "descripcion": "Buen equilibrio entre tamaño y calidad.",
+        "descripcion": "Maximo 1080p · H.264 1650 kbps · AAC 128 kbps",
     },
     "Fuerte": {
         "altura_max": 720,
         "factor": 0.80,
-        "descripcion": "Reduce a 720p. Ideal para compartir.",
+        "descripcion": "Maximo 720p · H.264 1200 kbps · AAC 128 kbps",
     },
     "Maxima": {
         "altura_max": 480,
         "factor": 0.90,
-        "descripcion": "Reduce a 480p. El archivo mas pequeño.",
+        "descripcion": "Maximo 480p · H.264 720 kbps · AAC 128 kbps",
     },
 }
 
