@@ -23,7 +23,7 @@ from typing import Callable, Dict, List, Optional
 
 import customtkinter as ctk
 
-from nucleo import miniaturas
+from nucleo import medios, miniaturas
 from nucleo.procesador import ResultadoArchivo
 
 LADO_MINIATURA = 56
@@ -92,15 +92,7 @@ class FilaArchivo:
 
     @property
     def tamano_legible(self) -> str:
-        try:
-            bytes_ = float(self.ruta.stat().st_size)
-        except OSError:
-            return "?"
-        for unidad in ("B", "KB", "MB", "GB"):
-            if bytes_ < 1024 or unidad == "GB":
-                return f"{bytes_:.0f} B" if unidad == "B" else f"{bytes_:.1f} {unidad}"
-            bytes_ /= 1024
-        return "?"
+        return medios.formatear_peso(medios.peso(self.ruta))
 
 
 class VistaCola(ctk.CTkFrame):
@@ -174,6 +166,7 @@ class VistaCola(ctk.CTkFrame):
         self.filas = []
         self._aviso = aviso
         miniaturas.limpiar_cache()
+        medios.limpiar_cache()
         self._redibujar()
         self._notificar_seleccion()
 
@@ -226,6 +219,15 @@ class VistaCola(ctk.CTkFrame):
     @property
     def total_marcadas(self) -> int:
         return sum(1 for f in self.filas if f.marcada)
+
+    @property
+    def peso_total(self) -> int:
+        """Suma en bytes de todos los archivos de la cola."""
+        return sum(medios.peso(f.ruta) for f in self.filas)
+
+    @property
+    def tiene_videos(self) -> bool:
+        return any(medios.es_video(f.ruta) for f in self.filas)
 
     # ------------------------------------------------------------- Dibujado --
 

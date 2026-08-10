@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from .base import LimpiadorBase
+from .base import OPCIONES_POR_DEFECTO, LimpiadorBase, OpcionesLimpieza
 
 # Formatos que no admiten canal alfa: si la imagen lo trae, hay que aplanarla.
 FORMATOS_SIN_ALFA = {"JPEG", "BMP"}
@@ -30,7 +30,14 @@ class LimpiadorImagen(LimpiadorBase):
     def esta_disponible(self) -> tuple[bool, str]:
         return True, ""
 
-    def limpiar(self, ruta_entrada: Path, ruta_salida: Path) -> bool:
+    def limpiar(
+        self,
+        ruta_entrada: Path,
+        ruta_salida: Path,
+        opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
+    ) -> bool:
+        # `opciones` solo contiene ajustes de video por ahora; las imagenes se
+        # recrean siempre igual, sin recompresion con perdida.
         try:
             with Image.open(ruta_entrada) as imagen:
                 formato = imagen.format or EXTENSION_A_FORMATO.get(

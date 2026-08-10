@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List
 
+from limpiadores.base import OPCIONES_POR_DEFECTO, OpcionesLimpieza
 from limpiadores.proveedor import ProveedorLimpiadores
 
 
@@ -48,6 +49,7 @@ class ProcesadorEnLote:
         lista_archivos: List[Path],
         carpeta_destino: Path,
         notificar_progreso: Callable[[ResultadoArchivo, int, int], None],
+        opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
     ) -> List[ResultadoArchivo]:
         """
         Limpia cada archivo de `lista_archivos` y deja el resultado en
@@ -63,7 +65,7 @@ class ProcesadorEnLote:
 
         with ThreadPoolExecutor(max_workers=self.max_hilos) as ejecutor:
             futuros = {
-                ejecutor.submit(self._tarea_individual, ruta, carpeta_destino): ruta
+                ejecutor.submit(self._tarea_individual, ruta, carpeta_destino, opciones): ruta
                 for ruta in lista_archivos
             }
             for futuro in as_completed(futuros):
@@ -82,7 +84,9 @@ class ProcesadorEnLote:
         return resultados
 
     @staticmethod
-    def _tarea_individual(ruta: Path, carpeta_destino: Path) -> ResultadoArchivo:
+    def _tarea_individual(
+        ruta: Path, carpeta_destino: Path, opciones: OpcionesLimpieza
+    ) -> ResultadoArchivo:
         """Resuelve el limpiador de un archivo, lo ejecuta y describe el desenlace."""
         if not ruta.is_file():
             return ResultadoArchivo(ruta, None, False, "El archivo ya no existe", "error")
@@ -102,8 +106,14 @@ class ProcesadorEnLote:
         except DestinoInvalido as error:
             return ResultadoArchivo(ruta, None, False, str(error), "error")
 
-        if limpiador.limpiar(ruta, ruta_salida):
-            return ResultadoArchivo(ruta, ruta_salida, True, "Metadatos eliminados", "limpiado")
+        if limpiador.limpiar(ruta, ruta_salida, opciones):
+            mensaje = "Metadatos eliminados"
+            if opciones.comprimir_video and ruta.suffix.lower() in ProveedorLimpiadores.FORMATOS_VIDEO:
+                antes, despues = ruta.stat().st_size, ruta_salida.stat().st_size
+                if despues < antes:
+                    ahorro = 100 * (antes - despues) / antes
+                    mensaje = f"Metadatos eliminados y comprimido ({ahorro:.0f}% menos)"
+            return ResultadoArchivo(ruta, ruta_salida, True, mensaje, "limpiado")
         return ResultadoArchivo(ruta, None, False, "No se pudo procesar", "error")
 
     @staticmethod

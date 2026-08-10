@@ -7,8 +7,10 @@ from typing import List
 
 import customtkinter as ctk
 
+from limpiadores.base import OpcionesLimpieza
 from limpiadores.limpiador_video import LimpiadorVideo
 from limpiadores.proveedor import ProveedorLimpiadores
+from nucleo import medios
 from nucleo.procesador import ProcesadorEnLote, ResultadoArchivo
 
 from .vista_cola import VistaCola
@@ -46,6 +48,8 @@ class VentanaPrincipal(ctk.CTk):
         self.carpeta_destino: Path = Path.home() / "Archivos_Limpiados"
         self.procesador = ProcesadorEnLote(max_hilos=os.cpu_count() or 4)
         self.cola_eventos: queue.Queue = queue.Queue()
+        # Numera las peticiones de estimacion para descartar las obsoletas
+        self._peticion_estimacion = 0
 
         self._construir_interfaz()
         self._avisar_si_falta_ffmpeg()
@@ -114,6 +118,28 @@ class VentanaPrincipal(ctk.CTk):
         )
         self.etiqueta_conteo.pack(side="right", padx=10)
 
+        # 3b. Barra de compresion y peso
+        barra_peso = ctk.CTkFrame(self, fg_color="transparent")
+        barra_peso.pack(fill="x", padx=15, pady=(6, 0))
+
+        self.comprimir = ctk.CTkCheckBox(
+            barra_peso, text="Comprimir videos", width=24,
+            command=self._al_cambiar_compresion,
+        )
+        self.comprimir.pack(side="left", padx=(10, 10))
+
+        self.etiqueta_nota_compresion = ctk.CTkLabel(
+            barra_peso, text="", anchor="w", text_color=("gray45", "gray60"),
+            font=ctk.CTkFont(size=11),
+        )
+        self.etiqueta_nota_compresion.pack(side="left")
+
+        self.etiqueta_peso = ctk.CTkLabel(
+            barra_peso, text="Peso total: 0 B", anchor="e",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        self.etiqueta_peso.pack(side="right", padx=10)
+
         # 4. Lista de archivos
         self.vista_cola = VistaCola(self, al_cambiar_seleccion=self._al_cambiar_seleccion)
         self.vista_cola.pack(fill="both", expand=True, padx=15, pady=8)
@@ -163,6 +189,63 @@ class VentanaPrincipal(ctk.CTk):
             self.marcar_todo.select()
         else:
             self.marcar_todo.deselect()
+
+        self._actualizar_peso()
+
+    # ------------------------------------------------------ Peso y compresion --
+
+    def _al_cambiar_compresion(self):
+        """Reacciona al marcar o desmarcar «Comprimir videos»."""
+        self._actualizar_peso()
+
+    def _actualizar_peso(self):
+        """
+        Refresca la etiqueta de peso. Si la compresion esta marcada, lanza el
+        calculo de la estimacion en un hilo: analizar cada video requiere
+        invocar a FFmpeg, y hacerlo aqui congelaria la ventana.
+        """
+        total = self.vista_cola.peso_total
+        texto_total = medios.formatear_peso(total)
+
+        if not self.vista_cola.tiene_videos:
+            self.etiqueta_nota_compresion.configure(
+                text="(no hay videos en la cola)" if self.comprimir.get() else ""
+            )
+        else:
+            self.etiqueta_nota_compresion.configure(
+                text="Recodifica: mas lento y con algo de perdida de calidad."
+                if self.comprimir.get() else ""
+            )
+
+        if not self.comprimir.get() or not self.vista_cola.tiene_videos:
+            self.etiqueta_peso.configure(text=f"Peso total: {texto_total}")
+            return
+
+        self.etiqueta_peso.configure(text=f"Peso total: {texto_total}  →  calculando...")
+
+        rutas = self.vista_cola.rutas
+        self._peticion_estimacion += 1
+        peticion = self._peticion_estimacion
+
+        def calcular():
+            estimado = sum(medios.estimar_comprimido(r) for r in rutas)
+            self.cola_eventos.put(("peso", (peticion, total, estimado)))
+
+        threading.Thread(target=calcular, daemon=True).start()
+
+    def _mostrar_estimacion(self, peticion: int, total: int, estimado: int):
+        """Pinta la estimacion, si sigue correspondiendo a la cola actual."""
+        # Descarta resultados de una cola que ya cambio mientras se calculaba
+        if peticion != self._peticion_estimacion or not self.comprimir.get():
+            return
+
+        ahorro = 100 * (total - estimado) / total if total else 0
+        # Se anuncia como maximo, no como cifra exacta: el calculo es un techo
+        # y el archivo real sale igual o mas pequeño, nunca mayor.
+        self.etiqueta_peso.configure(
+            text=f"Peso total: {medios.formatear_peso(total)}  →  "
+                 f"maximo {medios.formatear_peso(estimado)}  ({ahorro:.0f}% menos)"
+        )
 
     def _avisar_si_falta_ffmpeg(self):
         """
@@ -254,6 +337,7 @@ class VentanaPrincipal(ctk.CTk):
             return
 
         self.archivos_en_proceso = archivos
+        self.opciones_en_proceso = OpcionesLimpieza(comprimir_video=bool(self.comprimir.get()))
         self._bloquear_controles(True)
         self.barra_progreso.set(0)
         self.vista_cola.reiniciar_estados()
@@ -270,6 +354,7 @@ class VentanaPrincipal(ctk.CTk):
         for boton in (self.boton_agregar, self.boton_vaciar, self.boton_destino):
             boton.configure(state=estado)
         self.marcar_todo.configure(state=estado)
+        self.comprimir.configure(state=estado)
         self.vista_cola.bloquear(bloquear)
 
         if bloquear:
@@ -293,7 +378,8 @@ class VentanaPrincipal(ctk.CTk):
 
         try:
             resultados = self.procesador.procesar_archivos(
-                self.archivos_en_proceso, self.carpeta_destino, actualizar_progreso
+                self.archivos_en_proceso, self.carpeta_destino, actualizar_progreso,
+                self.opciones_en_proceso,
             )
         except Exception as error:
             self.cola_eventos.put(("error", str(error)))
@@ -317,6 +403,8 @@ class VentanaPrincipal(ctk.CTk):
                     self.etiqueta_estado.configure(
                         text=f"Procesando {actual} de {total}: {resultado.ruta_origen.name}"
                     )
+                elif tipo == "peso":
+                    self._mostrar_estimacion(*carga)
                 elif tipo == "fin":
                     self._finalizar_procesamiento(carga)
                 elif tipo == "error":
