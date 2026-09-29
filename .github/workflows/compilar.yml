@@ -46,7 +46,7 @@ jobs:
           python -m PyInstaller --onefile --console --name Verificador `
             --distpath dist_check --workpath build_check --specpath build_check `
             --add-data "$((python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'));customtkinter" `
-            --add-data "$PWD\recursos\ffmpeg.exe;recursos" `
+            --add-binary "$PWD\recursos\ffmpeg.exe;recursos" `
             --hidden-import PIL._tkinter_finder --paths "$PWD" `
             empaquetado/verificar_paquete.py --noconfirm
           ./dist_check/Verificador.exe
@@ -93,7 +93,7 @@ jobs:
           python -m PyInstaller --onefile --console --name Verificador \
             --distpath dist_check --workpath build_check --specpath build_check \
             --add-data "$(python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'):customtkinter" \
-            --add-data "$PWD/recursos/ffmpeg:recursos" \
+            --add-binary "$PWD/recursos/ffmpeg:recursos" \
             --hidden-import PIL._tkinter_finder --paths "$PWD" \
             empaquetado/verificar_paquete.py --noconfirm
           ./dist_check/Verificador

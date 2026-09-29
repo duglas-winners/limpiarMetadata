@@ -11,6 +11,7 @@ solo archivo incluye descomprimir todo el contenido a una carpeta temporal.
 No forma parte de la aplicacion que recibe el usuario.
 """
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -40,7 +41,19 @@ def main() -> int:
         return 1
 
     # 2. FFmpeg incrustado
+    #
+    # Se comprueba el bit de ejecucion aparte de que arranque. Es la
+    # comprobacion que faltaba cuando FFmpeg viajaba como dato y no como
+    # binario: en macOS llegaba sin permiso de ejecucion, el paquete parecia
+    # correcto, y fallaban todos los videos en cuanto lo usaba un usuario.
     ff = ruta_ffmpeg()
+    if ff and os.name != "nt":
+        if os.access(ff, os.X_OK):
+            print(f"OK  FFmpeg tiene permiso de ejecucion ({oct(os.stat(ff).st_mode)[-3:]})")
+        else:
+            fallos.append("FFmpeg sin permiso de ejecucion")
+            print(f"FALLO  FFmpeg existe pero NO es ejecutable: {ff}")
+
     if not ff:
         fallos.append("FFmpeg no resuelto")
         print("FALLO  FFmpeg no encontrado")

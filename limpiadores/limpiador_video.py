@@ -42,11 +42,12 @@ class LimpiadorVideo(LimpiadorBase):
         ruta_salida: Path,
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
         al_progresar: Optional[Callable[[float], None]] = None,
-    ) -> bool:
+    ) -> tuple[bool, str]:
         ejecutable = ruta_ffmpeg()
         if not ejecutable:
-            print(f"No se puede procesar {ruta_entrada.name}: FFmpeg no disponible")
-            return False
+            return False, (
+                "FFmpeg no esta disponible o el sistema no permite ejecutarlo."
+            )
 
         # Importacion diferida: `nucleo` depende de `limpiadores`, y hacerla
         # arriba crearia un ciclo entre ambos paquetes.
@@ -87,20 +88,18 @@ class LimpiadorVideo(LimpiadorBase):
         ]
 
         try:
-            return self._ejecutar(comando, ruta_entrada, duracion, al_progresar)
+            return self._ejecutar(comando, duracion, al_progresar)
         except Exception as error:
-            print(f"Error procesando el video {ruta_entrada.name}: {error}")
-            return False
+            return False, f"{type(error).__name__}: {error}"
 
     # ---------------------------------------------------------- Ejecucion --
 
     @staticmethod
     def _ejecutar(
         comando: list[str],
-        ruta_entrada: Path,
         duracion: float,
         al_progresar: Optional[Callable[[float], None]],
-    ) -> bool:
+    ) -> tuple[bool, str]:
         """
         Lanza FFmpeg leyendo su avance en vivo.
 
@@ -138,12 +137,29 @@ class LimpiadorVideo(LimpiadorBase):
 
         if proceso.returncode != 0:
             detalle = "".join(errores).strip()
-            print(f"FFmpeg fallo en {ruta_entrada.name}: {detalle}")
-            return False
+            codigo = LimpiadorVideo._codigo_legible(proceso.returncode)
+            return False, (
+                f"FFmpeg termino con codigo {codigo}.\n{detalle}"
+            )
 
         if al_progresar:
             al_progresar(1.0)
-        return True
+        return True, ""
+
+    @staticmethod
+    def _codigo_legible(codigo: int) -> str:
+        """
+        Presenta el codigo de salida de forma util.
+
+        En Windows, Python devuelve los codigos negativos de FFmpeg como
+        enteros sin signo enormes (3199971767 en vez de -1094995529), que no
+        dicen nada a nadie. Se convierte de vuelta y se acompaña del hexadecimal,
+        que es como FFmpeg documenta sus errores.
+        """
+        if codigo > 0x7FFFFFFF:
+            con_signo = codigo - 0x100000000
+            return f"{con_signo} (0x{codigo:08X})"
+        return str(codigo)
 
     @staticmethod
     def _fraccion(linea: str, duracion: float) -> Optional[float]:

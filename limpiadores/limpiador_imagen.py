@@ -37,7 +37,7 @@ class LimpiadorImagen(LimpiadorBase):
         ruta_salida: Path,
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
         al_progresar: Optional[Callable[[float], None]] = None,
-    ) -> bool:
+    ) -> tuple[bool, str]:
         # `opciones` solo contiene ajustes de video por ahora; las imagenes se
         # recrean siempre igual, sin recompresion con perdida.
         #
@@ -50,15 +50,17 @@ class LimpiadorImagen(LimpiadorBase):
                     ruta_entrada.suffix.lower(), ""
                 )
                 if not formato:
-                    print(f"Formato de imagen desconocido: {ruta_entrada.name}")
-                    return False
+                    return False, (
+                        f"Formato de imagen desconocido para {ruta_entrada.name}. "
+                        f"La extension no corresponde a ningun formato conocido y "
+                        f"el archivo tampoco declara el suyo."
+                    )
 
                 imagen_limpia = self._copiar_solo_pixeles(imagen, formato)
                 imagen_limpia.save(ruta_salida, format=formato)
-            return True
+            return True, ""
         except Exception as error:
-            print(f"Error procesando la imagen {ruta_entrada.name}: {error}")
-            return False
+            return False, f"{type(error).__name__}: {error}"
 
     @staticmethod
     def _copiar_solo_pixeles(imagen: Image.Image, formato: str) -> Image.Image:

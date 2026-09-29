@@ -6,6 +6,9 @@ from typing import Callable, List, Optional
 from limpiadores.base import OPCIONES_POR_DEFECTO, OpcionesLimpieza
 from limpiadores.proveedor import ProveedorLimpiadores
 
+from . import diagnostico
+from .registro import registro
+
 
 class DestinoInvalido(Exception):
     """La ruta de salida calculada pondria en riesgo el archivo original."""
@@ -110,7 +113,18 @@ class ProcesadorEnLote:
     ) -> ResultadoArchivo:
         """Resuelve el limpiador de un archivo, lo ejecuta y describe el desenlace."""
         if not ruta.is_file():
+            registro.error("El archivo ya no existe",
+                           f"No se encontro en {ruta.parent}", archivo=ruta.name)
             return ResultadoArchivo(ruta, None, False, "El archivo ya no existe", "error")
+
+        # Se comprueba aqui y no por el error de FFmpeg porque su diagnostico
+        # para un archivo vacio ("falta el atomo moov") describe otra cosa y
+        # mandaria al usuario a buscar una corrupcion que no existe.
+        if ruta.stat().st_size == 0:
+            registro.error("El archivo esta vacio",
+                           "Ocupa 0 bytes. Probablemente la copia o la descarga "
+                           "no llego a completarse.", archivo=ruta.name)
+            return ResultadoArchivo(ruta, None, False, "El archivo esta vacio", "error")
 
         limpiador = ProveedorLimpiadores.obtener_segun_archivo(ruta)
         if limpiador is None:
@@ -132,15 +146,27 @@ class ProcesadorEnLote:
             def al_progresar(fraccion: float, _ruta=ruta):
                 notificar_avance(_ruta, fraccion)
 
-        if limpiador.limpiar(ruta, ruta_salida, opciones, al_progresar):
+        exito, volcado = limpiador.limpiar(ruta, ruta_salida, opciones, al_progresar)
+
+        if exito:
             mensaje = "Metadatos eliminados"
             if opciones.comprimir_video and ruta.suffix.lower() in ProveedorLimpiadores.FORMATOS_VIDEO:
                 antes, despues = ruta.stat().st_size, ruta_salida.stat().st_size
                 if despues < antes:
                     ahorro = 100 * (antes - despues) / antes
                     mensaje = f"Metadatos eliminados y comprimido ({ahorro:.0f}% menos)"
+            registro.info(mensaje, archivo=ruta.name)
             return ResultadoArchivo(ruta, ruta_salida, True, mensaje, "limpiado")
-        return ResultadoArchivo(ruta, None, False, "No se pudo procesar", "error")
+
+        # El volcado tecnico se traduce a una causa reconocible y se guarda
+        # entero en el registro, que es lo que muestra la consola.
+        causa = diagnostico.interpretar(volcado)
+        registro.error(
+            causa.resumen,
+            f"{causa.explicacion}\n\n{diagnostico.resumir_salida(volcado)}",
+            archivo=ruta.name,
+        )
+        return ResultadoArchivo(ruta, None, False, causa.resumen, "error")
 
     @staticmethod
     def _ruta_salida_libre(ruta: Path, carpeta_destino: Path) -> Path:

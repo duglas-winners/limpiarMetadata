@@ -200,6 +200,34 @@ En cualquier caso, **un archivo con problema nunca detiene el resto del lote**: 
 
 ---
 
+## 5b. La consola de diagnostico
+
+Cuando algo falla, el botón **Consola** (arriba a la derecha) abre una ventana con el detalle. Si hay incidencias, el botón se pone rojo y muestra cuántas: `Consola (3)`.
+
+Cada incidencia aparece en dos niveles:
+
+```
+[10:25:56] ERROR  video 2.mp4: Video incompleto o dañado
+           Al archivo le falta el indice interno (atomo moov). Suele pasar
+           con grabaciones interrumpidas o descargas a medias.
+
+           FFmpeg termino con codigo -1094995529 (0xBEBBB1B7).
+           [in#0] moov atom not found
+```
+
+La primera línea dice **qué pasa**, la segunda **por qué**, y debajo va el volcado técnico por si hace falta enseñárselo a alguien.
+
+| Botón | Qué hace |
+|---|---|
+| **Solo problemas** | Oculta los eventos correctos y deja solo avisos y errores |
+| **Copiar** | Copia todo al portapapeles |
+| **Guardar...** | Lo escribe en un archivo de texto |
+| **Vaciar** | Limpia el registro |
+
+La consola se actualiza sola mientras procesas, así que puedes dejarla abierta y ver qué ocurre en tiempo real.
+
+---
+
 ## 6. Problemas frecuentes
 
 **Windows muestra un aviso azul de SmartScreen al abrirla**

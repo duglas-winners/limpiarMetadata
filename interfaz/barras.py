@@ -35,6 +35,7 @@ class BarraAcciones(ctk.CTkFrame):
         al_elegir_destino: Callable[[], None],
         al_vaciar: Callable[[], None],
         al_cambiar_vista: Callable[[str], None],
+        al_abrir_consola: Callable[[], None],
     ):
         super().__init__(maestro)
 
@@ -57,6 +58,31 @@ class BarraAcciones(ctk.CTkFrame):
         )
         self.selector_vista.set("Lista")
         self.selector_vista.pack(side="right", padx=5, pady=8)
+
+        # Sigue disponible mientras se procesa: es justo cuando hace falta
+        # mirar por que esta fallando algo.
+        self.boton_consola = ctk.CTkButton(
+            self, text="Consola", width=100, fg_color="gray40",
+            hover_color="gray30", command=al_abrir_consola,
+        )
+        self.boton_consola.pack(side="right", padx=(5, 12), pady=8)
+
+    def marcar_incidencias(self, cuantas: int) -> None:
+        """
+        Refleja en el boton si hay algo que mirar.
+
+        Se colorea solo cuando hay incidencias: un boton siempre rojo se vuelve
+        invisible de tanto verlo, y deja de avisar cuando de verdad importa.
+        """
+        if cuantas:
+            self.boton_consola.configure(
+                text=f"Consola ({cuantas})",
+                fg_color=COLOR_PELIGRO, hover_color=COLOR_PELIGRO_HOVER,
+            )
+        else:
+            self.boton_consola.configure(
+                text="Consola", fg_color="gray40", hover_color="gray30",
+            )
 
     def bloquear(self, bloquear: bool) -> None:
         estado = "disabled" if bloquear else "normal"

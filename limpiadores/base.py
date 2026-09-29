@@ -33,10 +33,19 @@ class LimpiadorBase(ABC):
         ruta_salida: Path,
         opciones: OpcionesLimpieza = OPCIONES_POR_DEFECTO,
         al_progresar: Optional[Callable[[float], None]] = None,
-    ) -> bool:
+    ) -> tuple[bool, str]:
         """
         Lee el archivo de entrada, procesa el contenido sin metadatos
         y lo guarda en la ruta de salida.
+
+        Devuelve `(exito, volcado)`. `volcado` lleva el texto de error tecnico
+        cuando algo falla —la salida de FFmpeg, el mensaje de la excepcion— y
+        queda vacio cuando todo va bien.
+
+        Se devuelve en crudo, sin interpretar: quien lo traduce a una causa
+        legible es `nucleo.diagnostico`, porque esta capa no debe depender del
+        nucleo. Antes se imprimia por stdout, que en una aplicacion sin consola
+        no lo lee nadie.
 
         `al_progresar` recibe la fraccion completada, de 0 a 1, tantas veces
         como el limpiador pueda informar. Es opcional: un limpiador que trabaja

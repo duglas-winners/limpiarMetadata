@@ -77,6 +77,11 @@ El botón dice "Agregar", no "Seleccionar", porque su comportamiento cambió: **
 
 A la **derecha** de la misma barra, separado del grupo anterior, va el conmutador de vista (`CTkSegmentedButton` con "Lista" y "Detalle"). Está alineado a la derecha a propósito: no ejecuta trabajo ni modifica la cola, solo cambia cómo se presenta lo que ya hay en pantalla. Agruparlo con los botones de acción sugeriría que hace algo al archivo.
 
+El botón **Consola**, también a la derecha, abre el registro de diagnóstico. Dos reglas:
+
+- **Sigue disponible mientras se procesa.** Es justo cuando hace falta mirar por qué está fallando algo.
+- **Solo se colorea cuando hay incidencias**, mostrando cuántas: `Consola (3)`. Un botón permanentemente rojo se vuelve invisible de tanto verlo y deja de avisar cuando de verdad importa.
+
 ### Zona 2 — Etiqueta de destino
 
 Una línea de texto alineada a la izquierda, siempre visible: `Destino: <ruta completa>`.

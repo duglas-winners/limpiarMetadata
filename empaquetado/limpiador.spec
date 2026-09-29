@@ -24,10 +24,18 @@ NOMBRE = "LimpiadorMetadatos"
 datos = [(str(Path(customtkinter.__file__).parent), "customtkinter")]
 
 # FFmpeg incrustado: sin el, la aplicacion solo procesa imagenes.
+#
+# Va en `binaries` y no en `datas` por una razon concreta: PyInstaller copia
+# los datos SIN el bit de ejecucion. En Windows es indiferente, pero en macOS y
+# Linux dejaba el FFmpeg incrustado inservible -existia, pesaba lo que debia, y
+# al lanzarlo devolvia "Permission denied"-, de modo que TODOS los videos
+# fallaban con un escueto "No se pudo procesar". Los binarios si conservan sus
+# permisos. `recursos.py` ademas lo verifica y corrige en tiempo de ejecucion.
 nombre_ffmpeg = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
 binario_ffmpeg = RAIZ / "recursos" / nombre_ffmpeg
+binarios = []
 if binario_ffmpeg.is_file():
-    datos.append((str(binario_ffmpeg), "recursos"))
+    binarios.append((str(binario_ffmpeg), "recursos"))
     print(f"[spec] FFmpeg incrustado desde {binario_ffmpeg}")
 else:
     print(f"[spec] AVISO: no se encontro {binario_ffmpeg}; el paquete no procesara videos.")
@@ -37,7 +45,7 @@ icono = RAIZ / "recursos" / ("icono.icns" if ES_MAC else "icono.ico")
 a = Analysis(
     [str(RAIZ / "principal.py")],
     pathex=[str(RAIZ)],
-    binaries=[],
+    binaries=binarios,
     datas=datos,
     hiddenimports=["PIL._tkinter_finder"],
     hookspath=[],

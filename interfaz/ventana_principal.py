@@ -17,12 +17,14 @@ from typing import List
 import customtkinter as ctk
 
 from limpiadores.base import OpcionesLimpieza
-from limpiadores.limpiador_video import LimpiadorVideo
 from limpiadores.proveedor import ProveedorLimpiadores
 from nucleo import medios, preferencias
 from nucleo.procesador import ProcesadorEnLote, ResultadoArchivo
+from nucleo.registro import registro
+from recursos import comprobar_ffmpeg
 
 from .barras import BarraAcciones, BarraCompresion, BarraSeleccion, PanelProgreso
+from .consola import Consola
 from .coordinador import CoordinadorTrabajo
 from .estilos import COLOR_TEXTO_SECUNDARIO
 from .vista_cola import VistaCola
@@ -58,6 +60,7 @@ class VentanaPrincipal(ctk.CTk):
         self.opciones_en_proceso = OpcionesLimpieza()
         self._completados = 0
         self._total_lote = 0
+        self._consola = None
 
         self._construir_interfaz()
         self._aplicar_preferencias()
@@ -73,7 +76,7 @@ class VentanaPrincipal(ctk.CTk):
             },
         )
 
-        self._avisar_si_falta_ffmpeg()
+        self._comprobar_ffmpeg()
 
     # ------------------------------------------------------------------ UI --
 
@@ -84,6 +87,7 @@ class VentanaPrincipal(ctk.CTk):
             al_elegir_destino=self._elegir_destino,
             al_vaciar=self._vaciar_cola,
             al_cambiar_vista=self._cambiar_vista,
+            al_abrir_consola=self._abrir_consola,
         )
         self.barra_acciones.pack(fill="x", padx=15, pady=(15, 8))
 
@@ -120,20 +124,48 @@ class VentanaPrincipal(ctk.CTk):
         )
         self.boton_procesar.pack(fill="x", padx=15, pady=(5, 15))
 
-    def _avisar_si_falta_ffmpeg(self):
+    def _comprobar_ffmpeg(self):
         """
-        Advierte al abrir si FFmpeg no esta disponible. Se muestra dentro de la
-        ventana y no como dialogo modal: las imagenes siguen siendo procesables
-        y frenar el arranque seria desproporcionado.
+        Verifica al arrancar que FFmpeg no solo esta, sino que ARRANCA.
+
+        Antes solo se comprobaba que el archivo existiera. Cuando el sistema no
+        permitia ejecutarlo —lo que ocurria en macOS, porque el binario viajaba
+        sin el bit de ejecucion— la aplicacion arrancaba sin avisar de nada y
+        despues fallaban todos los videos, uno a uno, con un escueto "No se
+        pudo procesar". Ahora el problema se detecta y se explica al principio.
         """
-        disponible, motivo = LimpiadorVideo().esta_disponible()
-        if not disponible:
-            self.progreso.informar(
-                "Aviso: FFmpeg no disponible, los videos no se podran procesar."
-            )
-            self.vista_cola.vaciar(
-                aviso=f"AVISO: {motivo}\n\nLas imagenes si se pueden procesar."
-            )
+        funciona, detalle = comprobar_ffmpeg()
+
+        if funciona:
+            registro.info("FFmpeg disponible", detalle)
+            return
+
+        registro.error("FFmpeg no se puede usar", detalle)
+        self.progreso.informar(
+            "Aviso: FFmpeg no disponible, los videos no se podran procesar."
+        )
+        self.vista_cola.vaciar(
+            aviso="AVISO: no se puede usar FFmpeg, asi que los videos fallaran.\n"
+                  "Las imagenes si se pueden procesar.\n\n"
+                  "Pulsa «Consola» para ver el detalle tecnico."
+        )
+        self._refrescar_consola()
+
+    # ------------------------------------------------------------- Consola --
+
+    def _abrir_consola(self):
+        """Abre la consola de diagnostico, o la trae al frente si ya lo estaba."""
+        if self._consola is not None and self._consola.winfo_exists():
+            self._consola.deiconify()
+            self._consola.lift()
+            self._consola.focus_force()
+            return
+
+        self._consola = Consola(self)
+
+    def _refrescar_consola(self):
+        """Actualiza el contador de incidencias del boton."""
+        self.barra_acciones.marcar_incidencias(registro.total_problemas)
 
     # --------------------------------------------------------- Acciones UI --
 
@@ -333,6 +365,7 @@ class VentanaPrincipal(ctk.CTk):
         self._completados = actual
 
         self.vista_cola.actualizar_resultado(resultado)
+        self._refrescar_consola()
         self.progreso.mostrar_archivo(resultado.ruta_origen.name, 1.0)
         self.progreso.mostrar_lote(actual, total, self._fraccion_lote(0.0))
         # La linea de estado no repite aqui el archivo ni el recuento: ambos ya
