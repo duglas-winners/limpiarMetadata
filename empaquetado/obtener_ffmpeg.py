@@ -11,6 +11,7 @@ Uso:
 
 import io
 import os
+import struct
 import platform
 import stat
 import sys
@@ -71,6 +72,69 @@ def elegir_fuente() -> tuple:
     raise RuntimeError(f"Sistema no soportado: {sistema} {maquina}")
 
 
+# Constantes de Mach-O, el formato ejecutable de macOS (mach-o/loader.h)
+MACHO_64 = 0xFEEDFACF
+MACHO_UNIVERSAL = 0xCAFEBABE
+CPU_MACOS = {0x0100000C: "arm64", 0x01000007: "x86_64"}
+
+
+def arquitectura_macho(ruta: Path):
+    """
+    Lee del binario para que procesador esta compilado, sin ejecutarlo.
+
+    Se necesita porque un FFmpeg de la arquitectura equivocada se ejecuta
+    igualmente si Rosetta 2 esta instalado —como ocurre en los runners de
+    GitHub—, de modo que probarlo no distingue. La cabecera si.
+
+    Devuelve "arm64", "x86_64", "universal" o None si no es un Mach-O.
+    """
+    try:
+        with open(ruta, "rb") as archivo:
+            cabecera = archivo.read(8)
+    except OSError:
+        return None
+
+    if len(cabecera) < 8:
+        return None
+
+    magia = struct.unpack("<I", cabecera[:4])[0]
+    if magia == MACHO_64:
+        return CPU_MACOS.get(struct.unpack("<I", cabecera[4:8])[0])
+
+    # Los binarios universales se guardan en big endian
+    if struct.unpack(">I", cabecera[:4])[0] == MACHO_UNIVERSAL:
+        return "universal"
+
+    return None
+
+
+def sirve_lo_que_hay(ruta: Path) -> bool:
+    """
+    Decide si el FFmpeg ya presente vale o hay que volver a descargarlo.
+
+    Fuera de macOS basta con que exista. En macOS se comprueba ademas la
+    arquitectura: la cache de la compilacion puede conservar un binario de
+    una version anterior, y sin esta comprobacion se daria por bueno. Fue
+    exactamente lo que ocurrio al pasar de binarios Intel a nativos.
+    """
+    if not ruta.is_file():
+        return False
+
+    if platform.system() != "Darwin":
+        return True
+
+    propia = platform.machine().lower()
+    propia = "arm64" if propia in ("arm64", "aarch64") else "x86_64"
+    encontrada = arquitectura_macho(ruta)
+
+    if encontrada in (propia, "universal"):
+        return True
+
+    print(f"  El FFmpeg presente es {encontrada or 'de formato desconocido'}, "
+          f"pero hace falta {propia}. Se descarga de nuevo.")
+    return False
+
+
 def descargar(url: str) -> bytes:
     print(f"Descargando FFmpeg desde {url}")
     peticion = urllib.request.Request(url, headers={"User-Agent": "limpiador-metadatos"})
@@ -129,8 +193,9 @@ def main() -> int:
     print(f"Plataforma: {platform.system()} {platform.machine()}")
     ruta_final = DESTINO / nombre
 
-    if ruta_final.is_file():
-        print(f"FFmpeg ya presente en {ruta_final} ({ruta_final.stat().st_size / 1_048_576:.1f} MB)")
+    if sirve_lo_que_hay(ruta_final):
+        print(f"FFmpeg ya presente en {ruta_final} "
+              f"({ruta_final.stat().st_size / 1_048_576:.1f} MB)")
         return 0
 
     try:
@@ -139,7 +204,10 @@ def main() -> int:
         print(f"Error obteniendo FFmpeg: {error}", file=sys.stderr)
         return 1
 
-    print(f"FFmpeg listo en {ruta} ({ruta.stat().st_size / 1_048_576:.1f} MB)")
+    detalle = f"{ruta.stat().st_size / 1_048_576:.1f} MB"
+    if platform.system() == "Darwin":
+        detalle += f", {arquitectura_macho(ruta) or 'formato desconocido'}"
+    print(f"FFmpeg listo en {ruta} ({detalle})")
     return 0
 
 

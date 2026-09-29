@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: recursos
-          key: ffmpeg-windows-v1
+          key: ffmpeg-windows-${{ runner.arch }}-v2
 
       - name: Instalar dependencias
         run: |
@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: recursos
-          key: ffmpeg-macos-v1
+          key: ffmpeg-macos-${{ runner.arch }}-v2
 
       - name: Instalar dependencias
         run: |
@@ -85,8 +85,11 @@ jobs:
 
       - name: Compilar y empaquetar
         run: |
+          echo "Runner: $(uname -m)"
           chmod +x empaquetado/construir_mac.sh
           ./empaquetado/construir_mac.sh
+          echo "Arquitectura del FFmpeg incrustado:"
+          lipo -archs recursos/ffmpeg
 
       - name: Autocomprobacion del paquete
         run: |
