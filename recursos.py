@@ -102,6 +102,11 @@ def comprobar_ffmpeg() -> tuple[bool, str]:
             )
         return False, "No se encontro FFmpeg ni incrustado ni en el sistema."
 
+    # macOS ejecuta las aplicaciones descargadas desde una copia temporal de
+    # solo lectura (App Translocation) mientras no se muevan a Aplicaciones.
+    # Ahi no se puede corregir ningun permiso, asi que conviene decirlo.
+    trasladada = "/AppTranslocation/" in str(ruta)
+
     try:
         proceso = subprocess.run(
             [ruta, "-version"],
@@ -109,7 +114,14 @@ def comprobar_ffmpeg() -> tuple[bool, str]:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception as error:
-        return False, f"No se pudo ejecutar {ruta}: {error}"
+        detalle = f"No se pudo ejecutar {ruta}: {error}"
+        if trasladada:
+            detalle += (
+                "\n\nAdemas, la aplicacion se esta ejecutando desde una copia "
+                "temporal de macOS. Arrastrala a la carpeta Aplicaciones y "
+                "abrela desde ahi."
+            )
+        return False, detalle
 
     if proceso.returncode != 0:
         detalle = (proceso.stderr or proceso.stdout or "").strip()

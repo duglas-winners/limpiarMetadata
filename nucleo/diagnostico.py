@@ -29,8 +29,11 @@ PATRONES = (
            "Suele ser un problema de permisos del propio programa, no del archivo.")),
     (r"bad cpu type|cannot execute binary|exec format error",
      Causa("FFmpeg no es compatible con este equipo",
-           "El FFmpeg incluido esta compilado para otra arquitectura. En Mac con "
-           "chip Apple puede hacer falta instalar Rosetta 2.")),
+           "El FFmpeg incluido esta compilado para otro procesador. Descarga la "
+           "version mas reciente de la aplicacion, que ya trae una compilacion "
+           "nativa. Como solucion inmediata, en un Mac con chip Apple puedes "
+           "instalar Rosetta 2 ejecutando en la Terminal: "
+           "softwareupdate --install-rosetta --agree-to-license")),
 
     # --- El archivo esta dañado ---
     (r"moov atom not found",

@@ -24,23 +24,51 @@ DESTINO = RAIZ / "recursos"
 
 # Compilaciones estaticas y autocontenidas: no arrastran librerias del sistema,
 # que es justo lo que necesita un binario incrustado en otra aplicacion.
+#
+# En macOS la fuente depende de la arquitectura. evermeet.cx, que se usaba
+# antes, solo publica binarios Intel: en un Mac con chip Apple el sistema los
+# rechaza con "Bad CPU type in executable" salvo que Rosetta 2 este instalado.
+# Como no lo esta por defecto, todos los videos fallaban. ffmpeg-static publica
+# builds nativos para las dos arquitecturas.
 FUENTES = {
-    "Windows": (
+    ("Windows", "*"): (
         "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
-        "zip",
-        "ffmpeg.exe",
+        "zip", "ffmpeg.exe",
     ),
-    "Darwin": (
-        "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip",
-        "zip",
-        "ffmpeg",
+    ("Darwin", "arm64"): (
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-arm64",
+        "crudo", "ffmpeg",
     ),
-    "Linux": (
+    ("Darwin", "x86_64"): (
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64",
+        "crudo", "ffmpeg",
+    ),
+    ("Linux", "*"): (
         "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
-        "tar",
-        "ffmpeg",
+        "tar", "ffmpeg",
     ),
 }
+
+
+def elegir_fuente() -> tuple:
+    """
+    Fuente que corresponde a este sistema y procesador.
+
+    La arquitectura solo distingue en macOS; en el resto se usa la entrada
+    comodin. `arm64` y `aarch64` son el mismo procesador con dos nombres.
+    """
+    sistema = platform.system()
+    maquina = platform.machine().lower()
+    if maquina in ("aarch64", "arm64"):
+        maquina = "arm64"
+    elif maquina in ("amd64", "x86_64"):
+        maquina = "x86_64"
+
+    if (sistema, maquina) in FUENTES:
+        return FUENTES[(sistema, maquina)]
+    if (sistema, "*") in FUENTES:
+        return FUENTES[(sistema, "*")]
+    raise RuntimeError(f"Sistema no soportado: {sistema} {maquina}")
 
 
 def descargar(url: str) -> bytes:
@@ -60,7 +88,10 @@ def extraer(datos: bytes, tipo: str, nombre_binario: str, destino: Path) -> Path
     destino.mkdir(parents=True, exist_ok=True)
     ruta_final = destino / nombre_binario
 
-    if tipo == "zip":
+    if tipo == "crudo":
+        # Algunas fuentes publican el ejecutable directamente, sin comprimir
+        ruta_final.write_bytes(datos)
+    elif tipo == "zip":
         with zipfile.ZipFile(io.BytesIO(datos)) as archivo:
             interno = next(
                 (n for n in archivo.namelist() if Path(n).name == nombre_binario), None
@@ -89,12 +120,13 @@ def extraer(datos: bytes, tipo: str, nombre_binario: str, destino: Path) -> Path
 
 
 def main() -> int:
-    sistema = platform.system()
-    if sistema not in FUENTES:
-        print(f"Sistema no soportado: {sistema}", file=sys.stderr)
+    try:
+        url, tipo, nombre = elegir_fuente()
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
         return 1
 
-    url, tipo, nombre = FUENTES[sistema]
+    print(f"Plataforma: {platform.system()} {platform.machine()}")
     ruta_final = DESTINO / nombre
 
     if ruta_final.is_file():

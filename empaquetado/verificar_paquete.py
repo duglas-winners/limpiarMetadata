@@ -21,6 +21,34 @@ from pathlib import Path
 INICIO = time.time()
 
 
+def _comprobar_arquitectura(ruta_ffmpeg: str) -> list:
+    """
+    Comprueba que FFmpeg es nativo para el procesador de esta maquina.
+
+    `lipo -archs` lista las arquitecturas del binario sin ejecutarlo, que es
+    justo lo que hace falta: ejecutarlo no distingue entre "nativo" y
+    "traducido por Rosetta", y esa diferencia es la que rompe la aplicacion en
+    los Mac donde Rosetta no esta instalado.
+    """
+    import platform
+
+    propia = platform.machine()
+    resultado = subprocess.run(["lipo", "-archs", ruta_ffmpeg],
+                               capture_output=True, text=True)
+    if resultado.returncode != 0:
+        print(f"AVISO  No se pudo leer la arquitectura: {resultado.stderr.strip()[:80]}")
+        return []
+
+    arquitecturas = resultado.stdout.split()
+    if propia in arquitecturas:
+        print(f"OK  FFmpeg es nativo para {propia} (contiene: {' '.join(arquitecturas)})")
+        return []
+
+    print(f"FALLO  FFmpeg es {' '.join(arquitecturas)} pero este equipo es {propia}. "
+          f"Solo funcionaria con Rosetta 2 instalado.")
+    return [f"FFmpeg no es nativo para {propia}"]
+
+
 def main() -> int:
     fallos = []
 
@@ -64,6 +92,26 @@ def main() -> int:
         print(f"OK  FFmpeg {etiqueta}: {version.stdout.splitlines()[0][:60]}")
         if esta_empaquetado() and not dentro:
             fallos.append("FFmpeg no viaja dentro del paquete")
+
+        # Arquitectura: NO basta con que arranque.
+        #
+        # Los runners macOS de GitHub llevan Rosetta 2 preinstalado, asi que un
+        # FFmpeg Intel se ejecutaba alli sin problema y la comprobacion pasaba.
+        # En el Mac de un usuario, sin Rosetta, el mismo binario moria con
+        # "Bad CPU type in executable" y fallaban todos los videos. Hay que
+        # comparar arquitecturas explicitamente.
+        if sys.platform == "darwin":
+            fallos.extend(_comprobar_arquitectura(ff))
+
+        # El codec de la compresion tiene que estar en esta compilacion
+        codecs = subprocess.run([ff, "-hide_banner", "-encoders"],
+                                capture_output=True, text=True)
+        for codec in ("libx264", "aac"):
+            if codec in codecs.stdout:
+                print(f"OK  Codec {codec} disponible")
+            else:
+                fallos.append(f"falta el codec {codec}")
+                print(f"FALLO  El codec {codec} no esta en esta compilacion de FFmpeg")
 
     # 3. Limpieza real de una imagen y un video
     from nucleo.procesador import ProcesadorEnLote
