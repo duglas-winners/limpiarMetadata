@@ -14,6 +14,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional
 
+from limpiadores.limpiador_imagen import AJUSTES_IMAGEN, LimpiadorImagen
 from limpiadores.proveedor import ProveedorLimpiadores
 from recursos import ruta_ffmpeg
 
@@ -48,32 +49,42 @@ FACTOR_MAXIMO = 0.9
 # `descripcion` declara los parametros de codificacion, no el uso sugerido: el
 # bitrate que se muestra es el que resulta de una entrada 1080p, que es el caso
 # habitual. Con otra resolucion de partida cambia segun BITRATE_POR_ALTURA.
+#
+# `descripcion_imagen` hace lo mismo para las imagenes; sus parametros viven en
+# `limpiadores.limpiador_imagen.AJUSTES_IMAGEN`, que es quien los aplica.
 NIVELES = {
     "Ligera": {
         "altura_max": None,
         "factor": 1.0,
         "descripcion": "Sin reescalar · H.264 3000 kbps a 1080p · AAC 128 kbps",
+        "descripcion_imagen": "Sin reescalar · JPEG/WebP calidad 85",
     },
     "Media": {
         "altura_max": 1080,
         "factor": 0.55,
         "descripcion": "Maximo 1080p · H.264 1650 kbps · AAC 128 kbps",
+        "descripcion_imagen": "Lado mayor max. 2560 px · JPEG/WebP calidad 78",
     },
     "Fuerte": {
         "altura_max": 720,
         "factor": 0.80,
         "descripcion": "Maximo 720p · H.264 1200 kbps · AAC 128 kbps",
+        "descripcion_imagen": "Lado mayor max. 1920 px · JPEG/WebP calidad 68",
     },
     "Maxima": {
         "altura_max": 480,
         "factor": 0.90,
         "descripcion": "Maximo 480p · H.264 720 kbps · AAC 128 kbps",
+        "descripcion_imagen": "Lado mayor max. 1280 px · JPEG/WebP calidad 55",
     },
 }
 
 NIVEL_POR_DEFECTO = "Media"
 
 _cache: dict[str, Optional["InfoVideo"]] = {}
+# Tamaño exacto de cada imagen comprimida, por (ruta, nivel)
+_cache_imagenes: dict[tuple[str, str], int] = {}
+_limpiador_imagen = LimpiadorImagen()
 _candado = Lock()
 
 _PATRON_DURACION = re.compile(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)")
@@ -112,6 +123,10 @@ def formatear_peso(bytes_: float) -> str:
 
 def es_video(ruta: Path) -> bool:
     return ruta.suffix.lower() in ProveedorLimpiadores.FORMATOS_VIDEO
+
+
+def es_imagen(ruta: Path) -> bool:
+    return ruta.suffix.lower() in ProveedorLimpiadores.FORMATOS_IMAGEN
 
 
 def info_video(ruta: Path) -> Optional[InfoVideo]:
@@ -216,10 +231,15 @@ def estimar_comprimido(ruta: Path, nivel: str = NIVEL_POR_DEFECTO) -> int:
     estimacion. Sobre contenido muy plano la diferencia es mucho mayor, siempre
     a favor del usuario.
 
-    Para lo que no es video, o no se puede analizar, devuelve su peso actual:
-    ese archivo no va a cambiar de tamaño.
+    Para las imagenes no es un techo sino el tamaño EXACTO: se comprimen en
+    memoria, que cuesta milisegundos, y se mide el resultado.
+
+    Para lo que no se puede analizar devuelve su peso actual: ese archivo no
+    va a cambiar de tamaño.
     """
     actual = peso(ruta)
+    if es_imagen(ruta):
+        return _estimar_imagen(ruta, nivel, actual)
     if not es_video(ruta):
         return actual
 
@@ -235,7 +255,29 @@ def estimar_comprimido(ruta: Path, nivel: str = NIVEL_POR_DEFECTO) -> int:
     return min(estimado, actual) if actual else estimado
 
 
+def _estimar_imagen(ruta: Path, nivel: str, actual: int) -> int:
+    """Tamaño exacto de la imagen comprimida. Cacheado; seguro entre hilos."""
+    if nivel not in AJUSTES_IMAGEN:
+        nivel = NIVEL_POR_DEFECTO
+    clave = (str(ruta), nivel)
+    with _candado:
+        if clave in _cache_imagenes:
+            return _cache_imagenes[clave]
+
+    try:
+        datos = _limpiador_imagen.comprimir_en_memoria(ruta, nivel)
+        # None: no se ahorraba nada y el limpiador la dejara sin comprimir
+        estimado = actual if datos is None else len(datos)
+    except Exception:
+        estimado = actual
+
+    with _candado:
+        _cache_imagenes[clave] = estimado
+    return estimado
+
+
 def limpiar_cache() -> None:
     """Olvida el analisis guardado. Se usa al vaciar la cola."""
     with _candado:
         _cache.clear()
+        _cache_imagenes.clear()

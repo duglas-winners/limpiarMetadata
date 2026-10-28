@@ -157,6 +157,34 @@ def main() -> int:
                 else:
                     print("OK  EXIF eliminado y verificado")
 
+        # 4. Compresion de imagen: reduce, no agranda y no deja EXIF
+        from limpiadores.base import OpcionesLimpieza
+
+        grande = tmp / "grande.jpg"
+        lienzo = Image.effect_noise((3000, 2000), 40).convert("RGB")
+        exif = lienzo.getexif()
+        exif[271] = "MarcaSecreta"
+        lienzo.save(grande, quality=95, exif=exif)
+
+        opciones = OpcionesLimpieza(comprimir_imagen=True, nivel_compresion="Media")
+        [r] = ProcesadorEnLote(max_hilos=1).procesar_archivos(
+            [grande], tmp / "comprimida", lambda r, a, t: None, opciones
+        )
+        if not r.exito:
+            fallos.append("compresion de imagen")
+            print(f"FALLO  Compresion de imagen: {r.mensaje}")
+        else:
+            with Image.open(r.ruta_salida) as im:
+                tamano, exif_restante = im.size, dict(im.getexif())
+            antes, despues = grande.stat().st_size, r.ruta_salida.stat().st_size
+            if max(tamano) != 2560 or despues >= antes or exif_restante:
+                fallos.append("compresion de imagen")
+                print(f"FALLO  Compresion de imagen: {tamano}, {antes} -> {despues} bytes, "
+                      f"EXIF {'presente' if exif_restante else 'ausente'}")
+            else:
+                print(f"OK  Imagen comprimida a {tamano[0]}x{tamano[1]}, "
+                      f"{antes // 1024} KB -> {despues // 1024} KB, sin EXIF")
+
     print(f"\nComprobaciones ejecutadas en {time.time() - INICIO:.1f}s")
 
     if fallos:

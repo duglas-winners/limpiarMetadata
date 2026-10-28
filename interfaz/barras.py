@@ -173,7 +173,7 @@ class BarraCompresion(ctk.CTkFrame):
         self._al_cambiar = al_cambiar
 
         self.comprimir = ctk.CTkCheckBox(
-            self, text="Comprimir videos", width=24, command=self._al_alternar
+            self, text="Comprimir", width=24, command=self._al_alternar
         )
         self.comprimir.pack(side="left", padx=(10, 10))
 
@@ -188,7 +188,7 @@ class BarraCompresion(ctk.CTkFrame):
         )
 
         self.etiqueta_nota = ctk.CTkLabel(
-            self, text="", anchor="w", text_color=COLOR_TEXTO_TENUE,
+            self, text="", anchor="w", justify="left", text_color=COLOR_TEXTO_TENUE,
             font=ctk.CTkFont(size=11),
         )
         self.etiqueta_nota.pack(side="left", padx=(6, 0))
@@ -210,13 +210,12 @@ class BarraCompresion(ctk.CTkFrame):
     def nivel(self) -> str:
         return self.selector_nivel.get()
 
-    def mostrar_nota(self, hay_videos: bool, descripcion: str = "") -> None:
-        if not self.activada:
-            self.etiqueta_nota.configure(text="")
-        elif not hay_videos:
-            self.etiqueta_nota.configure(text="(no hay videos en la cola)")
-        else:
-            self.etiqueta_nota.configure(text=descripcion)
+    def mostrar_nota(self, descripcion: str = "") -> None:
+        """
+        Parametros del nivel elegido, solo de los tipos que hay en la cola:
+        describir la compresion de video con solo fotos en la lista es ruido.
+        """
+        self.etiqueta_nota.configure(text=descripcion if self.activada else "")
 
     def bloquear(self, bloquear: bool) -> None:
         estado = "disabled" if bloquear else "normal"

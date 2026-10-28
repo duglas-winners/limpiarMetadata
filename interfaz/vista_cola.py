@@ -192,6 +192,10 @@ class VistaCola(ctk.CTkFrame):
     def tiene_videos(self) -> bool:
         return self.cola.tiene_videos
 
+    @property
+    def tiene_imagenes(self) -> bool:
+        return self.cola.tiene_imagenes
+
     # ------------------------------------------------------------- Dibujado --
 
     def _refrescar(self) -> None:
@@ -364,13 +368,14 @@ class VistaCola(ctk.CTkFrame):
 
     def _pedir_estimacion(self, fila: FilaArchivo) -> None:
         """
-        Calcula el peso comprimido de un video en segundo plano.
+        Calcula el peso comprimido de un video o una imagen en segundo plano.
 
         Solo se pide cuando hace falta: si no se va a comprimir, si no es
-        video, o si ya se calculo antes, no hay nada que hacer. `medios`
+        imagen ni video, o si ya se calculo antes, no hay nada que hacer. `medios`
         cachea el analisis, asi que redibujar no repite el trabajo.
         """
-        if not self._comprimiendo or not fila.es_video or fila.estimado is not None:
+        comprimible = fila.es_video or fila.es_imagen
+        if not self._comprimiendo or not comprimible or fila.estimado is not None:
             return
 
         generacion = self._generacion

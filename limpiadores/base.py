@@ -13,6 +13,7 @@ class OpcionesLimpieza:
     """
 
     comprimir_video: bool = False
+    comprimir_imagen: bool = False
     # Clave de `nucleo.medios.NIVELES`. Se declara como texto para no crear una
     # dependencia de `limpiadores` hacia `nucleo`, que invertiria las capas.
     nivel_compresion: str = "Media"

@@ -66,11 +66,15 @@ Contrato base para cualquier algoritmo que elimine metadatos. Es una clase abstr
 `al_progresar` recibe la fracción completada, de 0 a 1, tantas veces como el limpiador pueda informar. Es opcional: uno que trabaja en un solo paso —como el de imágenes— puede no llamarlo nunca, y el procesador da el archivo por completo al terminar.
 
 #### Dataclass `OpcionesLimpieza`
-Ajustes que el usuario elige en la interfaz y que afectan a cómo se procesa cada archivo. Se pasan a **todos** los limpiadores; cada uno atiende los que le conciernen e ignora el resto — `LimpiadorImagen` ignora `comprimir_video`.
+Ajustes que el usuario elige en la interfaz y que afectan a cómo se procesa cada archivo. Se pasan a **todos** los limpiadores; cada uno atiende los que le conciernen e ignora el resto — `LimpiadorImagen` ignora `comprimir_video` y `LimpiadorVideo` ignora `comprimir_imagen`.
 
 | Campo | Por defecto | Efecto |
 |---|---|---|
 | `comprimir_video` | `False` | Recodifica el vídeo a bitrate objetivo en lugar de remuxear |
+| `comprimir_imagen` | `False` | Reduce resolución y calidad de la imagen según el nivel |
+| `nivel_compresion` | `"Media"` | Clave de `nucleo.medios.NIVELES`, común a imagen y vídeo |
+
+La interfaz activa los dos `comprimir_*` con la misma casilla; van separados para que el núcleo no presuponga esa decisión de interfaz.
 
 Existe para que añadir un ajuste nuevo no obligue a cambiar la firma del contrato ni la del procesador.
 
@@ -85,6 +89,8 @@ Depende solo de Pillow, por lo que siempre está disponible.
 | Constante | Contenido | Para qué |
 |---|---|---|
 | `FORMATOS_SIN_ALFA` | `{"JPEG", "BMP"}` | Formatos que no admiten canal de transparencia. Si la imagen lo trae, hay que aplanarla antes de guardar o Pillow falla. |
+| `FORMATOS_CON_PERDIDA` | `{"JPEG", "WEBP"}` | Formatos en los que la compresión actúa sobre la calidad, además de la resolución. |
+| `AJUSTES_IMAGEN` | `{"Media": {"lado_max": 2560, "calidad": 78}, ...}` | Parámetros de compresión por nivel: Ligera (sin reescalar, 85), Media (2560 px, 78), Fuerte (1920 px, 68), Máxima (1280 px, 55). Viven aquí y no en `nucleo` porque es este limpiador quien los aplica; `nucleo.medios` los importa para describirlos. |
 | `EXTENSION_A_FORMATO` | `{".jpg": "JPEG", ...}` | Mapa de respaldo para deducir el formato cuando el archivo no lo declara (ocurre con imágenes generadas en memoria o con cabeceras dañadas). |
 
 #### Clase `LimpiadorImagen(LimpiadorBase)`
@@ -93,7 +99,10 @@ Elimina EXIF, GPS, perfiles de color ICC, comentarios XMP e historial de edició
 | Método | Firma | Qué hace |
 |---|---|---|
 | `esta_disponible` | `() -> tuple[bool, str]` | Siempre devuelve `(True, "")`. Pillow es una dependencia de Python, ya instalada si la app arranca. |
-| `limpiar` | `(ruta_entrada, ruta_salida) -> bool` | Abre la imagen, determina el formato de salida (el declarado por el archivo o, si falta, el deducido de la extensión), delega la copia limpia a `_copiar_solo_pixeles` y la guarda. Si el formato no se puede determinar, devuelve `False`. |
+| `limpiar` | `(ruta_entrada, ruta_salida, opciones, al_progresar) -> tuple[bool, str]` | Con `comprimir_imagen`, escribe lo que devuelve `comprimir_en_memoria`; si esta devuelve `None`, o sin compresión, abre la imagen, determina el formato de salida (el declarado por el archivo o, si falta, el deducido de la extensión), delega la copia limpia a `_copiar_solo_pixeles` y la guarda. Si el formato no se puede determinar, devuelve `False`. |
+| `comprimir_en_memoria` | `(ruta, nivel) -> bytes \| None` | Copia limpia, reducida con `_reducir` y guardada en un `BytesIO` con `_parametros_guardado`. Devuelve `None` si el resultado no es más pequeño que el original: **comprimir nunca agranda**. Es pública porque `nucleo.medios` la usa para mostrar el tamaño exacto antes de procesar. |
+| `_reducir` | `(imagen, lado_max) -> Image` *(estático)* | Reduce el lado mayor a `lado_max` con LANCZOS conservando la proporción. Nunca agranda. |
+| `_parametros_guardado` | `(formato, ajustes) -> dict` *(estático)* | JPEG: `quality`, `optimize`, `progressive`. WebP: `quality`, `method=6`. PNG: `optimize`, `compress_level=9`. TIFF: deflate. BMP: nada; solo actúa la reducción. |
 | `_copiar_solo_pixeles` | `(imagen: Image, formato: str) -> Image` *(estático)* | El corazón del limpiador. Devuelve una imagen nueva con los mismos píxeles y **sin ningún contenedor de metadatos**. Tres casos: (1) modo paleta `P`/`PA` → convierte a `RGB`/`RGBA`, porque la paleta viaja fuera de la matriz de píxeles; (2) formato de destino sin alfa pero imagen con transparencia → aplana sobre fondo blanco; (3) caso general → `Image.frombytes(modo, tamaño, imagen.tobytes())`, que copia la matriz cruda sin arrastrar el diccionario `.info`. |
 
 **Nota sobre lo que sí permanece:** en un JPEG limpio queda la cabecera JFIF (`jfif_version`, `jfif_density`). No es metadato del usuario: es parte estructural del formato y no revela nada sobre origen, cámara ni ubicación.
@@ -179,7 +188,7 @@ Administra la cola de procesamiento en paralelo mediante un grupo de hilos. Se u
 | Método | Firma | Qué hace |
 |---|---|---|
 | `__init__` | `(max_hilos: int = 4)` | Guarda el tamaño del grupo de hilos, con mínimo de 1 para evitar un `ThreadPoolExecutor` inválido. La interfaz le pasa `os.cpu_count()`. |
-| `_hilos_para` | `(opciones) -> int` | Cuántos archivos procesar a la vez. **Al comprimir baja a uno solo**, por dos razones: x264 ya reparte su trabajo entre todos los núcleos, así que varias compresiones simultáneas compiten sin acelerar nada; y con un único archivo en curso, el progreso individual que muestra la interfaz es inequívoco. |
+| `_hilos_para` | `(opciones, archivos) -> int` | Cuántos archivos procesar a la vez. **Al comprimir vídeos baja a uno solo** (si el lote solo tiene imágenes conserva todos los hilos: cada una tarda milisegundos), por dos razones: x264 ya reparte su trabajo entre todos los núcleos, así que varias compresiones simultáneas compiten sin acelerar nada; y con un único archivo en curso, el progreso individual que muestra la interfaz es inequívoco. |
 | `procesar_archivos` | `(lista_archivos, carpeta_destino, notificar_progreso) -> List[ResultadoArchivo]` | Método principal. Crea la carpeta destino si no existe, envía cada archivo al grupo de hilos con `submit`, y consume los resultados con `as_completed` a medida que terminan. Envuelve `futuro.result()` en un `try/except` que convierte cualquier excepción imprevista en un `ResultadoArchivo` fallido: **la cola nunca se rompe a la mitad**. Llama a `notificar_progreso(resultado, completados, total)` una vez por archivo terminado, desde el hilo trabajador. Devuelve la lista completa de resultados. |
 | `_tarea_individual` | `(ruta, carpeta_destino) -> ResultadoArchivo` *(estático)* | Lo que ejecuta cada hilo para un archivo. Encadena cuatro comprobaciones y devuelve un resultado descriptivo en cada punto de salida: ¿el archivo sigue existiendo? → ¿hay limpiador para su extensión? → ¿están sus dependencias? → ejecutar `limpiar`. |
 | `_ruta_salida_libre` | `(ruta, carpeta_destino) -> Path` *(estático)* | **La copia limpia conserva el nombre original.** Como eso hace que el nombre de salida pueda coincidir con el de entrada, aplica dos salvaguardas: si la ruta calculada resuelve al mismo archivo de origen, lanza `DestinoInvalido` en vez de destruirlo; si ya existe *otro* archivo con ese nombre (corrida anterior), añade sufijo numérico (`foto_1.jpg`). |
@@ -228,6 +237,8 @@ Cada nivel lleva además una `descripcion` que la interfaz muestra tal cual: dec
 `bitrate_objetivo` parte del valor de referencia de la altura **resultante**, no de la original — si se va a escalar hacen falta menos bits — y le aplica el factor. `altura_objetivo` nunca agranda: un vídeo 480p se queda en 480p en todos los niveles.
 
 Medido sobre 1080p a 8 Mbps, el resultado real cae entre un 1% y un 5% por debajo del techo estimado en los cuatro niveles.
+
+**Imágenes.** Cada nivel lleva también `descripcion_imagen`, con los parámetros de `AJUSTES_IMAGEN`. Para una imagen, `estimar_comprimido` no estima: llama a `LimpiadorImagen.comprimir_en_memoria` y devuelve el tamaño **exacto** del resultado, cacheado por `(ruta, nivel)` en `_cache_imagenes`. Cuesta de milisegundos a un par de segundos en fotos muy grandes, y corre en segundo plano como la de vídeo.
 
 ---
 

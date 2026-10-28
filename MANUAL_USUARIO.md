@@ -72,7 +72,7 @@ Arriba a la derecha hay un conmutador con dos vistas. Puedes cambiar entre ellas
 | **Lista** | Una línea por archivo | Lotes grandes, cuando solo quieres ver el avance |
 | **Detalle** | Miniatura de cada archivo, tamaño, formato y resultado | Cuando quieres confirmar visualmente qué estás procesando |
 
-**Ambas vistas muestran el peso de cada archivo.** Con la compresión marcada, cada vídeo indica además a cuánto bajaría: `32.5 MB → max. 4.7 MB`. Así ves de un vistazo cuál es el archivo pesado del lote, que es lo que necesitas para decidir si comprimir o cuál quitar.
+**Ambas vistas muestran el peso de cada archivo.** Con la compresión marcada, cada archivo indica además a cuánto bajaría. En los vídeos es un techo —el resultado real será igual o menor—: `32.5 MB → max. 4.7 MB`. En las imágenes es el tamaño exacto, porque se calcula comprimiéndolas de verdad en memoria: `6.2 MB → 444.5 KB`. Así ves de un vistazo cuál es el archivo pesado del lote, que es lo que necesitas para decidir si comprimir o cuál quitar.
 
 Las cifras **se actualizan al instante** cuando cambias el nivel de compresión, así que puedes probar los cuatro y quedarte con el que te dé el tamaño que buscas antes de procesar nada.
 
@@ -109,11 +109,13 @@ Verás **dos barras de progreso**:
 
 La de arriba existe precisamente para los archivos grandes: comprimir un vídeo de 2 GB lleva minutos, y sin ella la pantalla parecería congelada. Mientras esa barra se mueva, la aplicación está trabajando.
 
-**Cuánto tarda.** Las imágenes, menos de un segundo. Los vídeos **sin comprimir**, unos segundos aunque pesen varios GB, porque solo se reempaquetan. Los vídeos **con la compresión marcada**, bastante más: hay que recodificar cada fotograma, y puede llevar varios minutos por vídeo. Al comprimir se procesa un archivo a la vez, para dedicarle toda la potencia del equipo.
+**Cuánto tarda.** Las imágenes, menos de un segundo, con o sin compresión. Los vídeos **sin comprimir**, unos segundos aunque pesen varios GB, porque solo se reempaquetan. Los vídeos **con la compresión marcada**, bastante más: hay que recodificar cada fotograma, y puede llevar varios minutos por vídeo. Al comprimir vídeos se procesa un archivo a la vez, para dedicarle toda la potencia del equipo; un lote que solo tiene imágenes sigue procesándose en paralelo.
 
 ### Paso 5b — Ajustar cuánto se comprime
 
-Al marcar **Comprimir vídeos** aparecen cuatro niveles. Elige según lo pequeño que necesites el archivo:
+Al marcar **Comprimir** aparecen cuatro niveles. El mismo nivel se aplica a las imágenes y a los vídeos de la cola. Elige según lo pequeño que necesites el archivo.
+
+**Vídeos:**
 
 | Nivel | Resolución | Vídeo (H.264) | Audio | Reducción típica |
 |---|---|---|---|---|
@@ -127,6 +129,21 @@ Los bitrates de la tabla son los que resultan de un vídeo **1080p de partida**,
 **Por qué los niveles fuertes bajan la resolución.** Cuando hay pocos bits disponibles, un 720p limpio se ve claramente mejor que un 1080p lleno de cuadros: el codificador reparte los mismos bits entre menos píxeles, así que cada uno queda mejor definido. Bajar resolución es lo que permite llegar a archivos muy pequeños sin que se vean mal.
 
 **Nunca se agranda un vídeo.** Si el tuyo ya es 480p, elegir "Fuerte" no lo escala a 720p; se queda como está y solo se ajusta el bitrate.
+
+**Imágenes:**
+
+| Nivel | Lado mayor | Calidad JPEG / WebP |
+|---|---|---|
+| **Ligera** | Sin reescalar | 85 |
+| **Media** | Máximo 2560 px | 78 |
+| **Fuerte** | Máximo 1920 px | 68 |
+| **Máxima** | Máximo 1280 px | 55 |
+
+El "lado mayor" es el ancho en las fotos horizontales y el alto en las verticales; la proporción se conserva siempre. Como en los vídeos, **nunca se agranda una imagen**: una foto de 1000 px se queda en 1000 px en todos los niveles.
+
+PNG, TIFF y BMP no tienen ajuste de calidad. En ellos solo actúa la reducción de tamaño, y PNG y TIFF se guardan además con la compresión sin pérdida más fuerte. Cada imagen conserva su formato: un PNG sigue siendo PNG.
+
+**Comprimir nunca agranda un archivo.** Si una imagen ya venía muy comprimida y el resultado no fuera más pequeño, se guarda la copia limpia sin comprimir.
 
 Un ejemplo real, con un vídeo de 335 MB:
 

@@ -67,7 +67,7 @@ class ProcesadorEnLote:
         total = len(lista_archivos)
         resultados: List[ResultadoArchivo] = []
         completados = 0
-        hilos = self._hilos_para(opciones)
+        hilos = self._hilos_para(opciones, lista_archivos)
 
         with ThreadPoolExecutor(max_workers=hilos) as ejecutor:
             futuros = {
@@ -92,17 +92,23 @@ class ProcesadorEnLote:
 
         return resultados
 
-    def _hilos_para(self, opciones: OpcionesLimpieza) -> int:
+    def _hilos_para(self, opciones: OpcionesLimpieza, archivos: List[Path]) -> int:
         """
         Cuantos archivos procesar a la vez.
 
-        Al comprimir se baja a uno solo, por dos razones. La primera es de
+        Al comprimir videos se baja a uno solo, por dos razones. La primera es de
         rendimiento: x264 ya reparte su trabajo entre todos los nucleos, asi
         que lanzar varias compresiones a la vez las hace competir y no acelera
         nada. La segunda es de interfaz: con un unico archivo en curso, el
         progreso individual que se muestra es inequivoco.
+
+        Comprimir imagenes no lo necesita: cada una tarda milisegundos y Pillow
+        usa un solo nucleo, asi que un lote solo de imagenes conserva los hilos.
         """
-        return 1 if opciones.comprimir_video else self.max_hilos
+        hay_videos = any(
+            r.suffix.lower() in ProveedorLimpiadores.FORMATOS_VIDEO for r in archivos
+        )
+        return 1 if opciones.comprimir_video and hay_videos else self.max_hilos
 
     @staticmethod
     def _tarea_individual(
@@ -150,7 +156,12 @@ class ProcesadorEnLote:
 
         if exito:
             mensaje = "Metadatos eliminados"
-            if opciones.comprimir_video and ruta.suffix.lower() in ProveedorLimpiadores.FORMATOS_VIDEO:
+            extension = ruta.suffix.lower()
+            comprimido = (
+                (opciones.comprimir_video and extension in ProveedorLimpiadores.FORMATOS_VIDEO)
+                or (opciones.comprimir_imagen and extension in ProveedorLimpiadores.FORMATOS_IMAGEN)
+            )
+            if comprimido:
                 antes, despues = ruta.stat().st_size, ruta_salida.stat().st_size
                 if despues < antes:
                     ahorro = 100 * (antes - despues) / antes

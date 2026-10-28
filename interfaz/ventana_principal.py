@@ -280,9 +280,15 @@ class VentanaPrincipal(ctk.CTk):
         calcula su propia estimacion; aqui no se agrega nada.
         """
         nivel = self.barra_compresion.nivel
-        descripcion = medios.NIVELES.get(nivel, {}).get("descripcion", "")
+        ajustes = medios.NIVELES.get(nivel, {})
 
-        self.barra_compresion.mostrar_nota(self.vista_cola.tiene_videos, descripcion)
+        partes = []
+        if self.vista_cola.tiene_imagenes:
+            partes.append("Imagen: " + ajustes.get("descripcion_imagen", ""))
+        if self.vista_cola.tiene_videos:
+            partes.append("Video: " + ajustes.get("descripcion", ""))
+
+        self.barra_compresion.mostrar_nota("\n".join(partes))
         self.vista_cola.establecer_compresion(self.barra_compresion.activada, nivel)
 
     # ----------------------------------------------------------- Proceso --
@@ -309,6 +315,7 @@ class VentanaPrincipal(ctk.CTk):
 
         self.opciones_en_proceso = OpcionesLimpieza(
             comprimir_video=self.barra_compresion.activada,
+            comprimir_imagen=self.barra_compresion.activada,
             nivel_compresion=self.barra_compresion.nivel,
         )
         self._completados = 0
@@ -319,7 +326,7 @@ class VentanaPrincipal(ctk.CTk):
         self.vista_cola.reiniciar_estados()
         self.progreso.informar(
             "Comprimiendo: esto puede tardar varios minutos por video."
-            if self.opciones_en_proceso.comprimir_video
+            if self.opciones_en_proceso.comprimir_video and self.vista_cola.tiene_videos
             else "Procesando..."
         )
 

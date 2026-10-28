@@ -108,9 +108,9 @@ Tres decisiones deliberadas:
 
 | Elemento | Cuándo se ve | Contenido |
 |---|---|---|
-| Casilla **Comprimir vídeos** | Siempre | Activa la recodificación |
+| Casilla **Comprimir** | Siempre | Activa la recompresión de imágenes y vídeos |
 | Selector de nivel | **Solo con la casilla marcada** | Ligera · Media · Fuerte · Máxima |
-| Nota | Solo con la casilla marcada | Parámetros de codificación del nivel elegido |
+| Nota | Solo con la casilla marcada | Parámetros del nivel elegido: una línea para imagen y otra para vídeo, solo de los tipos que hay en la cola |
 
 **La nota declara parámetros, no usos.** Dice *"Máximo 720p · H.264 1200 kbps · AAC 128 kbps"*, no *"ideal para compartir"*. Una recomendación de uso presupone el caso del usuario y no le permite comprobar nada; los parámetros sí le dejan decidir con criterio propio y contrastar el resultado.
 
@@ -120,7 +120,7 @@ Tres decisiones deliberadas:
 
 No lleva ninguna cifra agregada. El peso vive en las filas (ver Zona 4).
 
-Si no hay vídeos en la cola, la nota lo dice —*"(no hay vídeos en la cola)"*— en lugar de dejar la casilla sugiriendo un efecto que no tendría.
+La nota solo describe los tipos que hay en la cola: con solo fotos no habla de bitrates, y con solo vídeos no habla de calidad JPEG.
 
 ### Zona 4 — Lista de archivos
 
@@ -142,11 +142,11 @@ Tiene **dos densidades del mismo contenido**:
 
 Una versión anterior mostraba el peso **total** de la cola en la barra superior. Se movió a cada fila porque un total no responde la pregunta que el usuario se hace al mirarlo: *¿cuál de estos archivos es el pesado?* — que es justo lo que hace falta para decidir si comprimir, o cuál quitar de la cola.
 
-Con la compresión marcada, cada vídeo muestra también su techo: `24.4 MB → max. 3.9 MB`. Las imágenes no lo muestran, porque no se comprimen.
+Con la compresión marcada, cada archivo muestra también a cuánto bajaría. En los vídeos es un techo, `24.4 MB → max. 3.9 MB`; en las imágenes, el tamaño exacto, `6.2 MB → 444.5 KB`, porque se obtiene comprimiéndolas en memoria. El `max.` solo aparece donde la cifra es un límite y no un valor medido.
 
 En vista **Lista** el peso va a la derecha, antes del chip: mantiene la fila en un solo renglón y deja todos los pesos alineados en columna. En **Detalle** acompaña al formato bajo el nombre.
 
-Mientras se calcula la estimación —requiere analizar el vídeo con FFmpeg— la fila dice `calculando...`, para que el hueco no parezca un dato que falta.
+Mientras se calcula la estimación —analizar el vídeo con FFmpeg, o comprimir la imagen en memoria— la fila dice `calculando...`, para que el hueco no parezca un dato que falta.
 
 #### Chips de estado
 
@@ -214,7 +214,7 @@ Textos de la etiqueta según el momento:
 | Tras agregar | `3 archivo(s) agregados.` o `3 agregados. 2 ya estaban en la cola.` |
 | Tras quitar | `2 archivo(s) quitados de la cola.` |
 | Al arrancar sin comprimir | `Procesando...` |
-| Al arrancar comprimiendo | `Comprimiendo: esto puede tardar varios minutos por video.` |
+| Al arrancar comprimiendo con vídeos en la cola | `Comprimiendo: esto puede tardar varios minutos por video.` |
 | Al terminar | `Listo: 6 limpiados, 1 omitido.` |
 | Tras un fallo global | `El procesamiento se interrumpio.` |
 
