@@ -23,3 +23,5 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+compilar_ahora.bat
+compilacion_log.txt
